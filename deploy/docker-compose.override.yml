@@ -25,6 +25,10 @@ services:
       # verification must be disabled to reach it. TESTBED ONLY.
       FROST_TLS_INSECURE_SKIP_VERIFY: "true"
 
+      # The intercepting proxy adds latency; 15s (default) is tight under
+      # backfill burst. Give the idempotency probe more room.
+      FROST_HTTP_TIMEOUT_SECONDS: "30"
+
       # MQTT publish path ON — Observation creates go over wss; entity upserts
       # + the idempotency probe still use HTTP (reuses the same Basic cred).
       MQTT_ENABLED: "true"

@@ -145,7 +145,7 @@ CC-BY 4.0.
 ## Performers (per the tender)
 
 - Diego Tolen — Solution Architect (Clappform)
-- Tom Greiffioen — Project Management (Clappform)
+- Tom Griffioen — Project Management (Clappform)
 - Bowen Harkema — OGC API / Software Engineer (Clappform)
 - Yashvir Jhingur — OGC API / Software Engineer (Clappform)
 - Wybren Terpstra — GIS Specialist (Clappform)

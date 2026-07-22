@@ -1362,6 +1362,7 @@ The following decisions are explicit Phase 1 deliverables (owner: Tom Greiffioen
 | `MQTT_TOPIC_PREFIX` | STA version segment mirrored in publish topics | `v1.1` |
 | `MQTT_QOS` | MQTT publish QoS (0/1/2) | `1` |
 | `FROST_TLS_INSECURE_SKIP_VERIFY` | Disable TLS verification for FROST + MQTT (testbed only; for self-signed / hostname-mismatched certs) | `false` |
+| `FROST_HTTP_TIMEOUT_SECONDS` | Per-request timeout for FROST HTTP calls; raise on high-latency paths | `15` |
 | `STATE_STORE_DSN` | Postgres connection string for `translation_state` | `postgresql://user:pw@postgres-state:5432/translation_state` |
 | `POLL_INTERVAL_SECONDS` | Default poll cadence per Datastream | `900` |
 | `FRESHNESS_THRESHOLD_HOURS` | Staleness threshold for the freshness alert | `6` |
