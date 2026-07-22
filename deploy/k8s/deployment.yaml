@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: translation-layer
+  namespace: geonovum-testbed
+  labels:
+    app.kubernetes.io/name: translation-layer
+    app.kubernetes.io/part-of: geonovum-sta-translation
+spec:
+  # ADR-009: single replica + Recreate strategy. Do NOT change without
+  # introducing leader election; concurrent pollers would compete on
+  # the same poll cursor.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: translation-layer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: translation-layer
+        app.kubernetes.io/part-of: geonovum-sta-translation
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: translation-layer
+          image: ghcr.io/clappformorg/geonovum-sta-translation:latest  # overridden per release
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: translation-layer-config
+            - secretRef:
+                name: translation-layer-secrets
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

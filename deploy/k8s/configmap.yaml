@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: translation-layer-config
+  namespace: geonovum-testbed
+data:
+  # Polling and validation knobs (Implementation-Contract defaults).
+  POLL_INTERVAL_SECONDS: "900"
+  FRESHNESS_THRESHOLD_HOURS: "6"
+  CURSOR_INIT_LOOKBACK_SECONDS: "3600"
+  CLOCK_SKEW_TOLERANCE_SECONDS: "300"
+  STATE_STORE_RETENTION_DAYS: "90"
+  LOG_LEVEL: "INFO"
+  HTTP_ADDR: ":8080"
+
+  # FROST target list (comma-separated). Fallback first; central
+  # appended when Topic #1 is live (F6 dual-write).
+  # Brabantse Delta (WBD) testbed server.
+  FROST_TARGETS: "https://sta.wbd-rd.nl/FROST-Server/v1.1"
+
+  # FROST MQTT write path. When enabled, Observation creates publish to the
+  # broker (over WebSockets); entity upserts still use HTTP. Auth reuses the
+  # FROST Basic credential from the Secret.
+  MQTT_ENABLED: "false"
+  MQTT_BROKER_URL: "wss://sta.wbd-rd.nl/mqtt"
+  MQTT_TOPIC_PREFIX: "v1.1"
+  MQTT_QOS: "1"
+
+  # Filled in via Secret in production; here only for non-secret docs.
+  # FRESHNESS_ALERT_WEBHOOK_URL is in the Secret because some chat
+  # webhook URLs embed an auth token.
+
+  # SULO endpoint base — filled at the Secret layer in real deploys
+  # because some auth schemes embed credentials in the URL.

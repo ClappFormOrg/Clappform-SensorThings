@@ -1,0 +1,90 @@
+# Local reproducibility starter (testbed-scale only). Brings up:
+#   - postgres (state store)
+#   - frost-postgres (FROST-Server backing store, separate DB)
+#   - frost-server (the public STA endpoint)
+#   - translation-layer (this service)
+#
+# Not for production — single-replica, no TLS, default credentials.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: translation
+      POSTGRES_PASSWORD: translation
+      POSTGRES_DB: translation_state
+    volumes:
+      - state_data:/var/lib/postgresql/data
+    healthcheck:
+      # Name the DB explicitly; without -d, pg_isready targets a DB named
+      # after the user ("translation"), which doesn't exist and spams FATALs.
+      test: ["CMD-SHELL", "pg_isready -U translation -d translation_state"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  frost-postgres:
+    image: postgis/postgis:16-3.4-alpine
+    environment:
+      POSTGRES_USER: frost
+      POSTGRES_PASSWORD: frost
+      POSTGRES_DB: frost
+    volumes:
+      - frost_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U frost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  frost-server:
+    image: fraunhoferiosb/frost-server:latest
+    depends_on:
+      frost-postgres:
+        condition: service_healthy
+    environment:
+      serviceRootUrl: http://localhost:8081/FROST-Server
+      http_cors_enable: "true"
+      http_cors_allowedOrigins: "*"
+      persistence_db_driver: org.postgresql.Driver
+      persistence_db_url: jdbc:postgresql://frost-postgres:5432/frost
+      persistence_db_username: frost
+      persistence_db_password: frost
+      persistence_autoUpdateDatabase: "true"
+    ports:
+      - "8081:8080"
+
+  translation-layer:
+    build: ..
+    depends_on:
+      postgres:
+        condition: service_healthy
+      frost-server:
+        condition: service_started
+    environment:
+      STATE_STORE_DSN: postgres://translation:translation@postgres:5432/translation_state?sslmode=disable
+      FROST_TARGETS: http://frost-server:8080/FROST-Server/v1.1
+      # Local frost-server runs unauthenticated; leave creds empty. The WBD
+      # testbed server instead uses Basic Auth (FROST_BASIC_AUTH_USER=write).
+      FROST_WRITE_TOKEN: ""
+      FROST_BASIC_AUTH_USER: ""
+      FROST_BASIC_AUTH_PASSWORD: ""
+      # MQTT write path off locally (frost-server container has no wss broker).
+      MQTT_ENABLED: "false"
+      MQTT_BROKER_URL: ""
+      POLL_INTERVAL_SECONDS: "60"
+      LOG_LEVEL: DEBUG
+      HTTP_ADDR: ":8080"
+      # Synthetic data for end-to-end validation before SULO is connected.
+      # Flip to "false" (or remove) once a real adapter is registered.
+      DUMMY_ADAPTER_ENABLED: "true"
+      DUMMY_THINGS_COUNT: "5"
+      DUMMY_CADENCE_SECONDS: "300"
+      # SULO_API_BASE_URL: (set when SULO adapter lands)
+      # SULO_API_KEY: (set when SULO adapter lands)
+    ports:
+      - "8080:8080"
+
+volumes:
+  state_data:
+  frost_data:

@@ -1,0 +1,22 @@
+# Optional hardening — restricts admin-endpoint ingress to the
+# geonovum-testbed namespace. Egress is unrestricted so the translation
+# layer can reach SULO, FROST, and the alert webhook.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: translation-layer-admin
+  namespace: geonovum-testbed
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: translation-layer
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: geonovum-testbed
+      ports:
+        - port: 8080
+          protocol: TCP

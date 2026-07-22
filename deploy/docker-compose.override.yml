@@ -1,0 +1,36 @@
+# LOCAL-ONLY override — do not commit. Points the dummy adapter run at the
+# Brabantse Delta (WBD) FROST server instead of the bundled local frost-server.
+#
+# Usage (from deploy/):
+#   export FROST_PASSWORD='the-wbd-password'      # PowerShell: $env:FROST_PASSWORD='...'
+#   docker compose up --build postgres translation-layer
+#
+# The base compose supplies STATE_STORE_DSN, poll interval, dummy count/cadence,
+# etc.; this file only overrides the FROST target, auth, and dependencies.
+services:
+  translation-layer:
+    # Narrow the dependency so the local frost-server / frost-postgres are NOT
+    # started — we write to WBD, and the state store is the only dependency.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Write synthetic dummy containers/observations to the WBD testbed.
+      FROST_TARGETS: https://sta.wbd-rd.nl/FROST-Server/v1.1
+      FROST_BASIC_AUTH_USER: write
+      FROST_BASIC_AUTH_PASSWORD: ${FROST_PASSWORD:?set FROST_PASSWORD in your shell first}
+      FROST_WRITE_TOKEN: ""
+
+      # WBD's TLS cert doesn't match its hostname (self-signed / no SAN), so
+      # verification must be disabled to reach it. TESTBED ONLY.
+      FROST_TLS_INSECURE_SKIP_VERIFY: "true"
+
+      # MQTT publish path ON — Observation creates go over wss; entity upserts
+      # + the idempotency probe still use HTTP (reuses the same Basic cred).
+      MQTT_ENABLED: "true"
+      MQTT_BROKER_URL: wss://sta.wbd-rd.nl/mqtt
+      MQTT_TOPIC_PREFIX: "v1.1"
+      MQTT_QOS: "1"
+
+      DUMMY_ADAPTER_ENABLED: "true"
+      LOG_LEVEL: DEBUG

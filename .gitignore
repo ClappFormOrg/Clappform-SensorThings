@@ -1,0 +1,29 @@
+# Binaries
+/translation-layer
+/bin/
+*.exe
+
+# Test artifacts
+*.test
+*.out
+coverage.*
+
+# Go module cache (only relevant if vendor is added later)
+/vendor/
+
+# Local env / secrets
+.env
+.env.local
+*.secret.yaml
+deploy/k8s/secret.yaml
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Build cache
+/tmp/
+/out/

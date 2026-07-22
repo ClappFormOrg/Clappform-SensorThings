@@ -1,0 +1,17 @@
+# ClusterIP only — admin endpoints (/healthz, /metrics, /healthz/freshness)
+# are not exposed via Ingress. Enforced per the Implementation Contract.
+apiVersion: v1
+kind: Service
+metadata:
+  name: translation-layer
+  namespace: geonovum-testbed
+  labels:
+    app.kubernetes.io/name: translation-layer
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: translation-layer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
