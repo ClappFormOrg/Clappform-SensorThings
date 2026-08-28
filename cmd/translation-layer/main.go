@@ -15,18 +15,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/adapters"
-	"github.com/clappformorg/geonovum-sta-translation/internal/adapters/dummy"
-	"github.com/clappformorg/geonovum-sta-translation/internal/api"
-	"github.com/clappformorg/geonovum-sta-translation/internal/config"
-	"github.com/clappformorg/geonovum-sta-translation/internal/frost"
-	"github.com/clappformorg/geonovum-sta-translation/internal/ingest"
-	"github.com/clappformorg/geonovum-sta-translation/internal/logging"
-	"github.com/clappformorg/geonovum-sta-translation/internal/oms"
-	"github.com/clappformorg/geonovum-sta-translation/internal/scheduler"
-	"github.com/clappformorg/geonovum-sta-translation/internal/state"
-	"github.com/clappformorg/geonovum-sta-translation/internal/validator"
-	"github.com/clappformorg/geonovum-sta-translation/internal/watchdog"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/adapters"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/adapters/collaborall"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/adapters/dummy"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/adapters/sulo"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/api"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/config"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/frost"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/ingest"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/logging"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/oms"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/scheduler"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/state"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/validator"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/watchdog"
 )
 
 func main() {
@@ -66,7 +68,9 @@ func run() error {
 
 	// FROST writers (one per target). Empty list is allowed — base
 	// startup before a target is configured does no work.
-	mapper := oms.New(oms.DefaultConfig())
+	omsCfg := oms.DefaultConfig()
+	omsCfg.EntityNamePrefix = cfg.EntityNamePrefix
+	mapper := oms.New(omsCfg)
 	frostAuth := frost.Auth{
 		Token:         cfg.FROSTWriteToken,
 		BasicUser:     cfg.FROSTBasicAuthUser,
@@ -130,6 +134,43 @@ func run() error {
 			slog.Int("things", cfg.DummyThingsCount),
 			slog.Duration("cadence", cfg.DummyCadence),
 		)
+	}
+
+	// SULO poll adapter (REEN CMS REST API v3). Registered when the REEN
+	// session credentials are configured; the scheduler then pulls
+	// container-slot fill levels every PollInterval.
+	if cfg.SULOEnabled() {
+		a, err := sulo.New(sulo.Config{
+			BaseURL:                cfg.SULOAPIBaseURL,
+			Username:               cfg.SULOUsername,
+			Password:               cfg.SULOPassword,
+			CustomerID:             cfg.SULOCustomerID,
+			HTTPTimeout:            cfg.SULOHTTPTimeout,
+			PageSize:               cfg.SULOPageSize,
+			ObservationPageLimit:   cfg.SULOObservationPageLimit,
+			MinConfidence:          cfg.SULOMinConfidence,
+			ExpectedCadenceSeconds: int(cfg.SULOExpectedCadence.Seconds()),
+		}, logger)
+		if err != nil {
+			return err
+		}
+		registry.RegisterPoll(a)
+		logger.Info("sulo poll adapter registered",
+			slog.String("vendor", sulo.VendorID),
+			slog.String("base_url", cfg.SULOAPIBaseURL),
+		)
+	}
+
+	// Collaborall push decoder: accepts batches from the standalone
+	// cmd/collaborall-reader on POST /ingest/collaborall. Registered only
+	// when a shared secret is configured; requires PUSH_HTTP_ADDR to serve.
+	if cfg.CollaborallIngestSecret != "" {
+		registry.RegisterPush(collaborall.NewPush(cfg.CollaborallIngestSecret))
+		if cfg.PushHTTPAddr == "" {
+			logger.Warn("collaborall push adapter registered but PUSH_HTTP_ADDR is empty — the ingest endpoint will not serve")
+		} else {
+			logger.Info("collaborall push adapter registered", slog.String("vendor", collaborall.VendorID))
+		}
 	}
 
 	// Scheduler (drives poll-mode adapters).

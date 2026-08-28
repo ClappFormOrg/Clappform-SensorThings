@@ -1,12 +1,18 @@
-# LOCAL-ONLY override — do not commit. Points the dummy adapter run at the
-# Brabantse Delta (WBD) FROST server instead of the bundled local frost-server.
+# LOCAL-ONLY override — do not commit real secrets. Wires the Collaborall
+# replication path end to end:
 #
-# Usage (from deploy/):
-#   export FROST_PASSWORD='the-wbd-password'      # PowerShell: $env:FROST_PASSWORD='...'
-#   docker compose up --build postgres translation-layer
+#   Collaborall FROST ──▶ collaborall-reader ──POST /ingest/collaborall──▶ translation-layer ──▶ FROST_TARGETS
 #
-# The base compose supplies STATE_STORE_DSN, poll interval, dummy count/cadence,
-# etc.; this file only overrides the FROST target, auth, and dependencies.
+# The translation-layer writes to FROST_TARGETS (here: the Brabantse Delta /
+# WBD testbed). Every created entity is prefixed with ENTITY_NAME_PREFIX (CF_)
+# to mark our data in the shared FROST-Server.
+#
+# Usage (from deploy/), set the secrets in your shell first:
+#   export FROST_PASSWORD='the-wbd-password'            # PowerShell: $env:FROST_PASSWORD='...'
+#   export COLLABORALL_USER='...'                       # Collaborall Basic-Auth user
+#   export COLLABORALL_PASSWORD='...'                   # Collaborall Basic-Auth password
+#   export COLLABORALL_INGEST_SECRET='a-shared-secret'  # any value; shared by both services
+#   docker compose up --build postgres translation-layer collaborall-reader
 services:
   translation-layer:
     # Narrow the dependency so the local frost-server / frost-postgres are NOT
@@ -15,26 +21,77 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # Write synthetic dummy containers/observations to the WBD testbed.
+      # --- Destination FROST (where replicated data is written) --------------
       FROST_TARGETS: https://sta.wbd-rd.nl/FROST-Server/v1.1
       FROST_BASIC_AUTH_USER: write
       FROST_BASIC_AUTH_PASSWORD: ${FROST_PASSWORD:?set FROST_PASSWORD in your shell first}
       FROST_WRITE_TOKEN: ""
-
-      # WBD's TLS cert doesn't match its hostname (self-signed / no SAN), so
-      # verification must be disabled to reach it. TESTBED ONLY.
+      # WBD's TLS cert doesn't match its hostname, so verification must be off.
       FROST_TLS_INSECURE_SKIP_VERIFY: "true"
-
-      # The intercepting proxy adds latency; 15s (default) is tight under
-      # backfill burst. Give the idempotency probe more room.
       FROST_HTTP_TIMEOUT_SECONDS: "30"
 
-      # MQTT publish path ON — Observation creates go over wss; entity upserts
-      # + the idempotency probe still use HTTP (reuses the same Basic cred).
+      # --- MQTT publish path (optional; reuses the FROST Basic cred) ---------
       MQTT_ENABLED: "true"
       MQTT_BROKER_URL: wss://sta.wbd-rd.nl/mqtt
       MQTT_TOPIC_PREFIX: "v1.1"
       MQTT_QOS: "1"
 
-      DUMMY_ADAPTER_ENABLED: "true"
+      # --- Collaborall push decoder -----------------------------------------
+      # Public push listener (must differ from HTTP_ADDR :8080). The reader
+      # posts batches to /ingest/collaborall here.
+      PUSH_HTTP_ADDR: ":8082"
+      COLLABORALL_INGEST_SECRET: ${COLLABORALL_INGEST_SECRET:?set COLLABORALL_INGEST_SECRET}
+      # Prefix on every created FROST entity name (separates our data + avoids
+      # name-based upsert collisions with other parties in the shared FROST).
+      ENTITY_NAME_PREFIX: "CF_"
+
+      # Real replication run — no synthetic data.
+      DUMMY_ADAPTER_ENABLED: "false"
       LOG_LEVEL: DEBUG
+    ports:
+      - "8082:8082" # push ingest endpoint
+
+  # Standalone reader: reads the Collaborall FROST and posts to the push
+  # endpoint above. Run via the go image with the source mounted (the project
+  # Dockerfile only builds translation-layer); swap for a dedicated build stage
+  # if you want a compiled image.
+  collaborall-reader:
+    image: golang:1.25-alpine
+    depends_on:
+      translation-layer:
+        condition: service_started
+    working_dir: /src
+    volumes:
+      - ..:/src:ro
+      - reader_gocache:/go
+      - reader_cursor:/cursor
+    environment:
+      CGO_ENABLED: "0"
+      # --- Source (Collaborall FROST; read) ---------------------------------
+      COLLABORALL_FROST_BASE_URL: https://sta-server.collaborall.net/v1.1
+      COLLABORALL_BASIC_AUTH_USER: ${COLLABORALL_USER:?set COLLABORALL_USER}
+      COLLABORALL_BASIC_AUTH_PASSWORD: ${COLLABORALL_PASSWORD:?set COLLABORALL_PASSWORD}
+      COLLABORALL_TLS_INSECURE_SKIP_VERIFY: "false"
+      COLLABORALL_HTTP_TIMEOUT_SECONDS: "30"
+      # Comma-separated Sensor names or @iot.ids to replicate. EMPTY = all 460
+      # datastreams. Pick a subset from GET /Sensors first.
+      COLLABORALL_WATCH_SENSORS: "1,2,3,4"
+      COLLABORALL_OBSERVATION_PAGE_LIMIT: "1000"
+      # --- Sink (the translation-layer push endpoint) -----------------------
+      API_INGEST_URL: http://translation-layer:8082/ingest/collaborall
+      COLLABORALL_INGEST_SECRET: ${COLLABORALL_INGEST_SECRET:?set COLLABORALL_INGEST_SECRET}
+      # A single POST drives the whole synchronous write-through to WBD (cold
+      # entity-chain upserts + a per-observation idempotency probe), so the sink
+      # needs far more than the 30s source-read timeout — especially the first
+      # cycle's 1h-lookback batch. Keep it well under the 900s poll interval.
+      INGEST_HTTP_TIMEOUT_SECONDS: "180"
+      # --- Loop / cursor -----------------------------------------------------
+      READER_POLL_INTERVAL_SECONDS: "900"
+      READER_CURSOR_LOOKBACK_SECONDS: "3600"
+      READER_CURSOR_FILE: /cursor/collaborall-cursors.json
+      LOG_LEVEL: DEBUG
+    command: ["go", "run", "./cmd/collaborall-reader"]
+
+volumes:
+  reader_gocache:
+  reader_cursor:

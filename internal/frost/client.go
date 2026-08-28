@@ -123,7 +123,7 @@ func (c *Client) FindByName(ctx context.Context, entity Entity, name string) (in
 	if err != nil {
 		return 0, NewTransientHTTPError(0, fmt.Errorf("frost: GET %s: %w", entity, err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 500 {
 		return 0, NewTransientHTTPError(resp.StatusCode, fmt.Errorf("frost: GET %s returned %d", entity, resp.StatusCode))
@@ -180,7 +180,7 @@ func (c *Client) Post(ctx context.Context, path string, body any) (int64, error)
 	if err != nil {
 		return 0, NewTransientHTTPError(0, fmt.Errorf("frost: POST %s: %w", path, err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body256, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 
@@ -233,7 +233,7 @@ func (c *Client) ObservationExists(ctx context.Context, datastreamID int64, phen
 	if err != nil {
 		return false, NewTransientHTTPError(0, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 500 {
 		return false, NewTransientHTTPError(resp.StatusCode, fmt.Errorf("frost: observation-exists %d", resp.StatusCode))

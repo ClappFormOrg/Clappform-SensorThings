@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // Target is one FROST-Server endpoint to dual-write to (F6).
@@ -30,9 +33,11 @@ type EntityCache interface {
 // MemEntityCache is the simplest cache: an in-memory map. It is
 // rebuilt at startup by calling GetOrCreate for each entity the
 // scheduler needs. Lookups remain authoritative because the FROST
-// GET-by-filter is the fallback on cache miss.
+// GET-by-filter is the fallback on cache miss. Safe for concurrent use:
+// the scheduler resolves Datastreams in parallel against a shared Writer.
 type MemEntityCache struct {
-	m map[string]int64
+	mu sync.RWMutex
+	m  map[string]int64
 }
 
 // NewMemEntityCache returns an empty in-memory cache.
@@ -43,12 +48,16 @@ func NewMemEntityCache() *MemEntityCache {
 func (c *MemEntityCache) key(e Entity, name string) string { return string(e) + "|" + name }
 
 func (c *MemEntityCache) Get(e Entity, name string) (int64, bool) {
+	c.mu.RLock()
 	id, ok := c.m[c.key(e, name)]
+	c.mu.RUnlock()
 	return id, ok
 }
 
 func (c *MemEntityCache) Put(e Entity, name string, id int64) {
+	c.mu.Lock()
 	c.m[c.key(e, name)] = id
+	c.mu.Unlock()
 }
 
 // Writer wraps one Target with the entity-upsert and observation-write
@@ -57,6 +66,13 @@ type Writer struct {
 	Target Target
 	Cache  EntityCache
 	Logger *slog.Logger
+
+	// sf collapses concurrent first-sight creates of the same (entity,
+	// name) into a single FindByName+POST. Without it, Datastreams that
+	// share an entity (e.g. one ObservedProperty or Sensor across many
+	// containers) race and each POST a duplicate, since FROST does not
+	// reject duplicate names.
+	sf singleflight.Group
 }
 
 // NewWriter returns a Writer for the given Target with a fresh cache.
@@ -65,9 +81,9 @@ func NewWriter(t Target, logger *slog.Logger) *Writer {
 }
 
 // GetOrCreate runs the upsert algorithm for a single entity:
-//   1. Cache lookup → return.
-//   2. GET ?$filter=name eq '<escaped>' → return on single hit.
-//   3. POST to create → return new @iot.id.
+//  1. Cache lookup → return.
+//  2. GET ?$filter=name eq '<escaped>' → return on single hit.
+//  3. POST to create → return new @iot.id.
 //
 // payloadBuilder is a closure so the caller can defer the cost of
 // building the payload until step 3 (most calls are cache hits).
@@ -82,6 +98,34 @@ func (w *Writer) GetOrCreate(
 		return id, nil
 	}
 
+	// Collapse concurrent misses for the same key: only one goroutine runs
+	// the FindByName+POST; the rest wait and share its result. This is what
+	// prevents duplicate shared entities (ObservedProperty, Sensor) when the
+	// scheduler resolves Datastreams in parallel.
+	v, err, _ := w.sf.Do(string(entity)+"|"+name, func() (any, error) {
+		// Re-check under the flight: an earlier leader for this key may have
+		// already populated the cache.
+		if id, ok := w.Cache.Get(entity, name); ok {
+			return id, nil
+		}
+		return w.resolveUncached(ctx, entity, name, postPath, payloadBuilder)
+	})
+	if err != nil {
+		return 0, err
+	}
+	return v.(int64), nil
+}
+
+// resolveUncached performs the name-filter lookup and, on miss, the create.
+// It is only ever run once per key at a time (guarded by GetOrCreate's
+// singleflight), so two callers cannot both reach the POST.
+func (w *Writer) resolveUncached(
+	ctx context.Context,
+	entity Entity,
+	name string,
+	postPath string,
+	payloadBuilder func() any,
+) (int64, error) {
 	id, err := w.Target.Client.FindByName(ctx, entity, name)
 	if err != nil {
 		var dup *DuplicateError

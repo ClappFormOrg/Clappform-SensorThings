@@ -20,8 +20,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/metrics"
-	"github.com/clappformorg/geonovum-sta-translation/internal/state"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/metrics"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/state"
 )
 
 // CheckInterval is the watchdog tick cadence. 30 minutes per F5 +
@@ -31,7 +31,7 @@ const CheckInterval = 30 * time.Minute
 // AlertPayload is the body POSTed to FRESHNESS_ALERT_WEBHOOK_URL on
 // every state-transition fire. JSON-serialized.
 type AlertPayload struct {
-	Status         string    `json:"status"`              // "stale" | "recovered"
+	Status         string    `json:"status"` // "stale" | "recovered"
 	MaxLastWritten time.Time `json:"max_last_written_at"`
 	StaleCount     int       `json:"stale_count"`
 	TotalCount     int       `json:"total_count"`
@@ -82,12 +82,12 @@ func (w *Watchdog) Run(ctx context.Context) error {
 
 // Snapshot is the read-only view exposed by /healthz/freshness.
 type Snapshot struct {
-	Status         state.Status `json:"status"`
-	StaleCount     int          `json:"stale_count"`
-	TotalCount     int          `json:"total_count"`
-	SinceTS        time.Time    `json:"since_ts"`
-	Examples       []string     `json:"examples"`
-	ThresholdNote  string       `json:"threshold_note"`
+	Status        state.Status `json:"status"`
+	StaleCount    int          `json:"stale_count"`
+	TotalCount    int          `json:"total_count"`
+	SinceTS       time.Time    `json:"since_ts"`
+	Examples      []string     `json:"examples"`
+	ThresholdNote string       `json:"threshold_note"`
 }
 
 // CurrentSnapshot returns a fresh snapshot suitable for /healthz/freshness.
@@ -225,7 +225,7 @@ func (w *Watchdog) fire(ctx context.Context, transition string, snap state.Stale
 		metrics.WatchdogAlertWebhookErrorsTotal.Inc()
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		w.Logger.Error("watchdog webhook non-2xx", slog.Int("status", resp.StatusCode))
 		metrics.WatchdogAlertWebhookErrorsTotal.Inc()
@@ -237,4 +237,3 @@ func (w *Watchdog) fire(ctx context.Context, transition string, snap state.Stale
 		slog.Int("total_count", snap.Total),
 	)
 }
-

@@ -134,6 +134,88 @@ hit the HTTP client timeout, while MQTT publish kept pace. Two consequences:
   the probe is redundant and could be skipped — removing the synchronous HTTP round-trip from
   the MQTT fast path entirely.
 
+### 3.7 Concurrent upsert race on shared entities (data-quality defect)
+
+**Observed:** on WBD the ObservedProperty `Fill level` and the Sensor
+`Dummy fill-level sensor DUMMY-1 1.0.0` each exist **5×** (logged as
+`sta duplicate entity … count=5`).
+
+**Root cause.** The scheduler processes Datastreams concurrently — one goroutine per
+Datastream — all sharing a single `Writer` per target. The entity upsert (`GetOrCreate`) is
+*check-then-act*: cache miss → `FindByName` → POST-if-absent. Entities with **per-container
+unique names** (Thing, Location, Datastream, FeatureOfInterest) never collide. But the
+**Sensor and ObservedProperty are shared** across all 5 Datastreams (same sensor model, same
+observed phenomenon), so the 5 goroutines raced: each saw the entity absent and POSTed its
+own copy. FROST-Server does **not** reject duplicate names (no `409`), so the existing
+conflict-refetch branch never fired.
+
+**Two underlying defects:**
+1. `MemEntityCache` is an unsynchronised `map` → concurrent `Get`/`Put` is a data race (and
+   can panic with `concurrent map writes` under load).
+2. `GetOrCreate`'s check-create is not atomic per key → concurrent first-sight creation of a
+   shared-named entity duplicates it.
+
+**Impact:** low functional risk (name lookups still resolve to the lowest `@iot.id`; stored
+data is correct) but real data-quality debt — `N−1` redundant Sensors/ObservedProperties per
+shared name, plus a latent map race. It does **not** grow after the first race: later runs
+find the existing copies and reuse the lowest id.
+
+**Recommended fix (plan of record):**
+1. Make the entity cache concurrency-safe (guard `MemEntityCache` with a mutex).
+2. Serialise check-create **per `(entity, name)` key** so concurrent callers collapse to a
+   single `FindByName` + POST (singleflight or a keyed mutex). This removes the race at the
+   Writer layer, independent of scheduler concurrency, and needs no scheduler pre-pass.
+3. Add a `-race` regression test: N concurrent `GetOrCreate` for one name ⇒ exactly one POST.
+4. Separately, clean up the existing redundant entities on WBD (keep the lowest `@iot.id`,
+   delete the extras).
+
+### 3.8 Cross-server interoperability — `Sensor.metadata` object-vs-string (portability defect)
+
+> **Scope note:** unlike §3.1–3.7 (all against WBD), this finding surfaced against a
+> **second, independent FROST target** — `https://sta-server.collaborall.net/v1.1` — during a
+> dual-write run. It is recorded here because it is a genuine *interoperability* lesson: the
+> exact same Sensor payload that WBD accepts is rejected by another STA server.
+
+**Observed.** `POST /Sensors` to the collaborall endpoint was rejected with:
+
+```json
+frost http 422: {"error":{"code":"STA-422","message":"The metadata field must be a string.","target":"metadata"}}
+```
+
+logged as an unclassified/transient vendor error on the ingest path. The identical entity
+upsert succeeds against WBD.
+
+**Root cause.** Our mapper builds `Sensor.metadata` as an **inline JSON object**
+(`frost.Sensor.Metadata` is `map[string]string`, tag `json:"metadata"`), so the wire payload is:
+
+```json
+{
+  "name": "Dummy fill-level sensor DUMMY-1 1.0.0",
+  "description": "Vendor-supplied fill-level sensor",
+  "encodingType": "application/json",
+  "metadata": { "model": "DUMMY-1", "firmware_version": "1.0.0" }
+}
+```
+
+The OGC STA spec types `Sensor.metadata` as *"any"*, with its concrete shape governed by
+`encodingType` — there is no canonical "inline JSON object" encoding. Stock **FROST-Server
+(WBD)** stores it loosely and accepts the object; the **collaborall** server enforces the
+stricter reading and requires `metadata` to be a **string scalar**. So the same payload is
+valid on one target and a `422` on the other — a portability gap, not a transport/auth fault.
+
+**Impact.** Sensor (and therefore the whole Datastream chain that references it) fails to
+register on the stricter server; the error is currently mis-classified as transient and
+retried indefinitely rather than surfaced as a permanent schema mismatch.
+
+**Recommended fix (plan of record):**
+1. Serialise `metadata` as a **JSON-encoded string** (least lossy) — e.g.
+   `"metadata": "{\"model\":\"DUMMY-1\",\"firmware_version\":\"1.0.0\"}"` — so it satisfies
+   "must be a string" while preserving the structured content.
+2. Since one target accepts objects and another demands strings, consider making the
+   `metadata` serialization **per-`Target`** rather than global.
+3. Classify `STA-422` responses as **permanent** (schema/validation) rather than transient, so
+   a payload the server will never accept is not retried forever.
+
 ## 4. Results — Things registered on WBD
 
 Five Things created (2026-07-17T09:17:40Z). Common properties for all rows:

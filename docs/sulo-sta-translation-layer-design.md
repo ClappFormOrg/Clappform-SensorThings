@@ -21,13 +21,13 @@ Dutch municipalities run thousands of smart waste containers and collection vehi
 
 This project delivers a **vendor-agnostic translation layer** that ingests SULO's operational sensor streams from real municipal containers (starting with the Afvalstoffendienst 's-Hertogenbosch deployment) and republishes them as OGC SensorThings API (STA) observations on a FROST-Server instance, modelled per the OGC Observations & Measurements Standard (OMS) and georeferenced in EPSG:4326. The translation layer is built behind a SULO adapter so a second vendor adapter can be added in ≤ 1 working day per the reproducibility guide.
 
-The deliverable matters for three audiences. Geonovum gets evidence that the OGC STA standard scales to mobile and high-cadence municipal sensors beyond the wastewater reference use case. Municipalities (s-Hertogenbosch first, then other municipalities) get a single read endpoint they can wire into their digital twins. Other vendors get a worked example showing how to put their proprietary streams behind OGC STA without changing their own platform.
+The deliverable matters for three audiences. Geonovum gets evidence that the OGC STA standard scales to mobile and high-cadence municipal sensors beyond the wastewater reference use case. Municipalities get a single read endpoint they can wire into their digital twins. Other vendors get a worked example showing how to put their proprietary streams behind OGC STA without changing their own platform.
 
 ---
 
 ## Project Constraints Applied
 
-*Constraints extracted from the Geonovum tender (Topic #2) and from `internal workstation conventions`. A developer implementing this feature must comply with all items listed here.*
+*Constraints extracted from the Geonovum tender (Topic #2). A developer implementing this feature must comply with all items listed here.*
 
 **From the Geonovum tender:**
 - OGC SensorThings API conformance — the published endpoint must pass STA query verification (filter by `phenomenonTime`, by location, by `ObservedProperty`).
@@ -38,18 +38,17 @@ The deliverable matters for three audiences. Geonovum gets evidence that the OGC
 - Software deliverables published under an OSI-approved open-source license — **Apache 2.0** (chosen over MIT to give downstream users explicit patent protection, which matters in a multi-vendor reproducibility setting).
 - Translation layer config + documentation added to the Geonovum GitHub repository.
 - Integration pipeline, connected sensors, and STA endpoint remain operational and publicly accessible for **at least six months after the testbed concludes** (i.e., through at least 2027-01-31).
-- Bi-weekly Geonovum coordination meetings (Tom Greiffioen as single point of contact).
+- Bi-weekly Geonovum coordination meetings (the project manager as single point of contact).
 - Active coordination with the Topic #1 contractor; where they publish a central FROST server, our data writes there.
 
-**From `internal workstation conventions` (workstation conventions):**
-- File-search uses `Glob`, content-search uses `Grep`, file edits use `Edit`/`Write`, system commands use `Bash`. Implementers should follow these tool conventions.
+**Document conventions:**
 - Today's date for all relative dates in this document: **2026-05-22**.
 
 ---
 
 ## Problem Statement
 
-**Current situation**: Operational waste-container fill-level data, RFID pickup events, and collection-vehicle GPS streams are emitted by SULO's SmartSULO platform via proprietary REST APIs. To consume these streams, every downstream system (municipal digital twin, BI dashboard, sustainability reporting tool) writes its own SmartSULO connector — duplicated effort, no standard schema, no interoperability with other waste-sensor vendors, and no path into Geonovum-aligned DTaaS digital twin platforms in cities such as 's-Hertogenbosch, Alkmaar, and Almere.
+**Current situation**: Operational waste-container fill-level data, RFID pickup events, and collection-vehicle GPS streams are emitted by SULO's SmartSULO platform via proprietary REST APIs. To consume these streams, every downstream system (municipal digital twin, BI dashboard, sustainability reporting tool) writes its own SmartSULO connector — duplicated effort, no standard schema, no interoperability with other waste-sensor vendors, and no path into Geonovum-aligned digital twin platforms.
 
 **Proposed solution**: A scheduled-polling translation layer that pulls observations from SmartSULO via a REST adapter, transforms them into OGC OMS-compliant SensorThings entities, and writes them to a FROST-Server STA endpoint. The translation layer maintains a per-Datastream poll cursor so it is restart-safe and exactly-once on writes. A second vendor adapter can be added without changes to the rest of the layer.
 
@@ -102,7 +101,7 @@ The deliverable matters for three audiences. Geonovum gets evidence that the OGC
 - **Technical level**: Intermediate. Knows their own API; new to OGC.
 - **Frequency**: Reads the guide once; expects to be productive within 1 working day (M5).
 
-### Operational: Clappform translation-layer maintainer (Bowen Harkema during testbed; on-call rotation after)
+### Operational: Clappform translation-layer maintainer (dedicated during testbed; on-call rotation after)
 - **Role**: Engineer responsible for keeping the layer running through the 6-month tail.
 - **Goals**: Know within hours when data has stopped flowing; restart the layer cleanly without data loss or duplication.
 - **Pain points**: A six-month unattended tail with logs-only would normally hide silent failures.
@@ -328,7 +327,7 @@ class VendorAdapter(Protocol):
 
 ### Security & Access Control
 
-- **SmartSULO API**: API key in environment variable, sourced from the Kubernetes Secret `clappform-sulo-credentials`. Rotated by Vincent (SULO) on a quarterly basis; rotation procedure documented in the runbook.
+- **SmartSULO API**: API key in environment variable, sourced from the Kubernetes Secret `clappform-sulo-credentials`. Rotated by the SULO domain contact on a quarterly basis; rotation procedure documented in the runbook.
 - **FROST write**: HTTP Basic or Bearer Token (FROST-Server supports both). Translation layer holds the only credential. Stored in Kubernetes Secret `clappform-frost-write-credentials`.
 - **FROST read**: anonymous. Per OGC STA convention and per the tender's "publicly accessible" commitment. No GET endpoint requires authentication.
 - **Internal state store** (Postgres holding poll cursors): network-isolated within the testbed cluster; no external exposure.
@@ -340,7 +339,7 @@ class VendorAdapter(Protocol):
 
 - **Fill-level observations** are not personal data: a percentage reading from a container is not attributable to an individual.
 - **Container location** in EPSG:4326 may correlate with household addresses in low-density placements. Mitigation: only publish containers whose location is on public street furniture; do not publish private-bin containers. SULO confirms which set falls into which category before ingestion.
-- **RFID transponder IDs** on collection events are flagged as **potential personal data** (a transponder ID can identify a specific household). RFID is out of scope for v1 MVP; before any RFID data is published, Diego must run a legal review with Clappform's DPO and Vincent (SULO). Likely mitigation: publish a salted hash of the transponder ID, not the raw ID.
+- **RFID transponder IDs** on collection events are flagged as **potential personal data** (a transponder ID can identify a specific household). RFID is out of scope for v1 MVP; before any RFID data is published, the solution architect must run a legal review with Clappform's DPO and the SULO domain contact. Likely mitigation: publish a salted hash of the transponder ID, not the raw ID.
 - **Data subject rights**: documented in the reproducibility guide. Erasure requests forwarded to SULO; deletion from FROST handled by entity ID lookup.
 
 ### Integrations
@@ -360,7 +359,7 @@ class VendorAdapter(Protocol):
 - **FROST-Server**: latest stable release at testbed start. Postgres + PostGIS backing per FROST-Server default.
 - **Container orchestration**: Kubernetes (Clappform internal). Manifests published as part of the reproducibility deliverable.
 - **Internal state store**: Postgres (separate database from FROST-Server's backing store).
-- **OS support for reproducibility guide**: Linux + Docker Desktop on macOS. Windows not officially supported (test environment for Bowen runs Windows but the guide targets Linux containers).
+- **OS support for reproducibility guide**: Linux + Docker Desktop on macOS. Windows not officially supported (test environment for the maintainer runs Windows but the guide targets Linux containers).
 
 ---
 
@@ -607,7 +606,7 @@ CREATE TABLE translation_state.watchdog_state (
 
 ### Outbound (Translation Layer → SmartSULO)
 
-*Adapter-mediated. Concrete shape TBD pending Vincent's docs. Adapter contract is fixed (see F2); SULO-specific REST details are encoded inside the SULO adapter only.*
+*Adapter-mediated. Concrete shape TBD pending the SULO domain contact's docs. Adapter contract is fixed (see F2); SULO-specific REST details are encoded inside the SULO adapter only.*
 
 | Method | Path | Auth | Request | Response (assumed) |
 |--------|------|------|---------|--------------------|
@@ -697,7 +696,7 @@ Observations are always POST with a pre-write `phenomenonTime eq` probe; they ar
 **Period**: 2026-05-22 to 2026-05-29 (1 week — tight; effective work starts immediately).
 
 - Phase 1 design review and sign-off (this document).
-- Vincent shares SmartSULO API specs; SULO adapter contract is reified against real endpoints.
+- The SULO domain contact shares SmartSULO API specs; SULO adapter contract is reified against real endpoints.
 - Topic #1 contractor contact established; OMS proposal sent.
 - Testbed Kubernetes cluster provisioned; FROST-Server (fallback) deployed; Postgres state store deployed.
 - CI/CD pipeline set up for the translation-layer container image.
@@ -728,13 +727,13 @@ Observations are always POST with a pre-write `phenomenonTime eq` probe; they ar
 
 - STA endpoint remains publicly readable.
 - Translation layer continues steady-state polling.
-- Freshness alert routes to Bowen (primary) and Tom (secondary).
+- Freshness alert routes to the translation-layer maintainer (primary) and the project manager (secondary).
 - Weekly check-in cadence; structured logs retained for 90 days.
 
 ### Phase 2+ enhancements (deferred)
 
 - **Vehicle Things + GPS Datastream**: modelling decided 2026-06-15; build only if decision permits inside-window completion.
-- **RFID collection events**: blocked on GDPR review by Diego/DPO; not earlier than Phase 3 publication.
+- **RFID collection events**: blocked on GDPR review by the solution architect/DPO; not earlier than Phase 3 publication.
 - **Webhook / MQTT push ingestion**: out of scope v1; design extension point in the scheduler module.
 - **Backfill of historical SULO data prior to 2026-05-22**: deferred; documented in the guide.
 - **Migration to Topic #1 central FROST**: dual-write capability built in v1 (F6); actual cutover happens when central is live.
@@ -757,8 +756,6 @@ Observations are always POST with a pre-write `phenomenonTime eq` probe; they ar
 | R4 | Silent failure during the 6-month operational tail | M | H | Freshness alert (F5) — single most important operational safeguard. |
 | R5 | Container scale exceeds 1,000 (reality is closer to 3,000+ across Afvalstoffendienst region) | M | M | Postgres state store and FROST-Server scale linearly to ~10x with index tuning; alert + capacity-plan if observation rate exceeds 100/sec sustained. |
 | R6 | Demo-day endpoint hammered by reviewers and goes down | L | M | FROST read is cacheable at HTTP layer; add reverse-proxy CDN/cache only if observed. |
-| R7 | Bowen / Yashvir bandwidth — both also work on parallel delivery commitments | M | M | Tom Greiffioen coordinates; testbed sprints planned around DTaaS commitments. |
-| R8 | Phase 1 schedule slip (7 days, no slack) | H | M | Weekly Phase-1 status check-ins by Tom; proactive Geonovum notification if MVP slips into mid-June. |
 | R9 | Topic #1's central FROST goes live mid-build, forcing re-pointing | L | L | F6 dual-write handles this transparently. |
 
 ---
@@ -767,14 +764,14 @@ Observations are always POST with a pre-write `phenomenonTime eq` probe; they ar
 
 **Dependencies** (must exist before development can fully proceed):
 
-- **SmartSULO API access** — Owner: Vincent Esajas (SULO). ETA: by 2026-05-29 (end of Phase 1). Without this, adapter is stubbed.
+- **SmartSULO API access** — Owner: SULO domain contact. ETA: by 2026-05-29 (end of Phase 1). Without this, adapter is stubbed.
 - **Testbed Kubernetes cluster** — Owner: Clappform infra. ETA: by 2026-05-26. Without this, no deploy target.
-- **FROST-Server image + Postgres** — Owner: Bowen. ETA: by 2026-05-29. Provisioned into the testbed cluster.
-- **Topic #1 contact details** — Owner: Tom Greiffioen (via Geonovum). ETA: by 2026-05-29.
+- **FROST-Server image + Postgres** — Owner: translation-layer maintainer. ETA: by 2026-05-29. Provisioned into the testbed cluster.
+- **Topic #1 contact details** — Owner: project manager (via Geonovum). ETA: by 2026-05-29.
 
 **Blockers** (would stop development if unresolved):
 
-- **SULO API auth scheme not confirmed** — Resolution: Vincent confirms by 2026-05-26; default assumption is bearer-token API key.
+- **SULO API auth scheme not confirmed** — Resolution: the SULO domain contact confirms by 2026-05-26; default assumption is bearer-token API key.
 - **OMS field-mapping disagreement with Topic #1** — Resolution: keep our mapping config-driven; align on first meeting.
 - **Vehicle + RFID modelling decision** — Resolution: ADR-003 decided by 2026-06-15. If undecided, Phase 2 ships fill-level only.
 
@@ -799,10 +796,9 @@ Observations are always POST with a pre-write `phenomenonTime eq` probe; they ar
 - OGC SensorThings API v1.1 specification.
 - OGC Observations & Measurements (OMS) Standard.
 - Clappform PyPI wrapper: https://pypi.org/project/clappform/
-- Clappform OGC Digital Twin repo (private): https://github.com/ClappFormOrg/OGC-Digital-twin
-- Tender document: `Tender - Clappform - Geonovum 2026Testbed.pdf` (project root).
-- Client contact: [redacted], Gemeente 's-Hertogenbosch ([redacted]).
-- SULO contact: Vincent Esajas ([redacted]).
+- Clappform OGC Digital Twin repo (internal, not public).
+- Geonovum 2026 Testbed tender document (held internally).
+- Municipal and SULO contact details are held out-of-band by the project team.
 
 ---
 
@@ -853,19 +849,19 @@ Two FROST-Server targets are supported via dual-write (F6): the local fallback (
 
 | Component | Responsibility | Layer | Owner |
 |-----------|---------------|-------|-------|
-| `translation-layer.scheduler` | Drives the poll loop on a cron tick; orchestrates adapter → validator → mapper → writer per Datastream | Service | Bowen Harkema |
-| `translation-layer.adapters.sulo` | Talks to SmartSULO REST; converts SULO payloads to `Canonical*` dataclasses; handles pagination + rate-limit backoff | Service | Yashvir Jhingur |
-| `translation-layer.validator` | Range-checks, timestamp-checks, and rejects malformed CanonicalObservations; emits `data_quality_*` log events | Service | Yashvir Jhingur |
-| `translation-layer.oms_mapper` | Maps `Canonical*` → STA entities (Thing/Location/Sensor/ObservedProperty/Datastream/Observation/FoI) | Service | Bowen Harkema |
-| `translation-layer.frost_writer` | Upserts entities; idempotent on Observation by (datastream_id, phenomenon_time); supports dual-write | Service | Bowen Harkema |
-| `translation-layer.state_store` | Postgres-backed access to `translation_state.*` tables; isolates SQL from business logic | Data | Bowen Harkema |
-| `translation-layer.watchdog` | Runs separate cron tick every 30 min; checks freshness; posts alert payload on transition | Service | Bowen Harkema |
-| `translation-layer.api` | `/healthz`, `/healthz/freshness`, `/metrics` HTTP handlers; cluster-internal only | Service | Bowen Harkema |
-| `frost-server` (deployment) | Standard FROST-Server image; reachable inside cluster for writes, via Ingress for public reads | Infra | Bowen Harkema (config); Clappform infra (cluster) |
-| `postgres-state` (deployment) | Postgres for `translation_state.*`; cluster-internal only | Infra | Bowen Harkema |
+| `translation-layer.scheduler` | Drives the poll loop on a cron tick; orchestrates adapter → validator → mapper → writer per Datastream | Service | Translation-layer maintainer |
+| `translation-layer.adapters.sulo` | Talks to SmartSULO REST; converts SULO payloads to `Canonical*` dataclasses; handles pagination + rate-limit backoff | Service | Adapter engineer |
+| `translation-layer.validator` | Range-checks, timestamp-checks, and rejects malformed CanonicalObservations; emits `data_quality_*` log events | Service | Adapter engineer |
+| `translation-layer.oms_mapper` | Maps `Canonical*` → STA entities (Thing/Location/Sensor/ObservedProperty/Datastream/Observation/FoI) | Service | Translation-layer maintainer |
+| `translation-layer.frost_writer` | Upserts entities; idempotent on Observation by (datastream_id, phenomenon_time); supports dual-write | Service | Translation-layer maintainer |
+| `translation-layer.state_store` | Postgres-backed access to `translation_state.*` tables; isolates SQL from business logic | Data | Translation-layer maintainer |
+| `translation-layer.watchdog` | Runs separate cron tick every 30 min; checks freshness; posts alert payload on transition | Service | Translation-layer maintainer |
+| `translation-layer.api` | `/healthz`, `/healthz/freshness`, `/metrics` HTTP handlers; cluster-internal only | Service | Translation-layer maintainer |
+| `frost-server` (deployment) | Standard FROST-Server image; reachable inside cluster for writes, via Ingress for public reads | Infra | Translation-layer maintainer (config); Clappform infra (cluster) |
+| `postgres-state` (deployment) | Postgres for `translation_state.*`; cluster-internal only | Infra | Translation-layer maintainer |
 | `postgres-frost` (deployment) | Postgres + PostGIS for FROST-Server's own backing store; cluster-internal only | Infra | Clappform infra |
-| `reproducibility-guide` | Markdown documentation in the public Geonovum repo | Docs | Bowen + Wybren + Tom |
-| GIS validation | Confirms FeatureOfInterest / Location encoding correctness, EPSG:4326 conformance | Service (consultative) | Wybren Terpstra |
+| `reproducibility-guide` | Markdown documentation in the public Geonovum repo | Docs | Maintainer + GIS specialist + project manager |
+| GIS validation | Confirms FeatureOfInterest / Location encoding correctness, EPSG:4326 conformance | Service (consultative) | GIS specialist |
 
 ---
 
@@ -935,14 +931,14 @@ The end-to-end flow for a single observation:
 
 ### ADR-001: Language and runtime
 
-**Context**: The translation layer needs to be implementable, maintainable, and reproducible. Clappform already publishes a Python SDK on PyPI (`clappform`) and a private `OGC-Digital-twin` repo cited in the tender. The team (Bowen, Yashvir) has Python depth.
+**Context**: The translation layer needs to be implementable, maintainable, and reproducible. Clappform already publishes a Python SDK on PyPI (`clappform`) and a private `OGC-Digital-twin` repo cited in the tender. The team (the maintainer, the adapter engineer) has Python depth.
 
 **Options considered**:
 - Python 3.11+ — Pro: team fluency, existing wrapper, rich OGC ecosystem. Con: heavier base image than Go.
 - Go — Pro: smallest image, strong typing, easy concurrent polling, single-binary deploy. Con: team less familiar; OGC STA libraries thinner.
 - Node/TypeScript — Pro: STA reference clients exist. Con: ergonomic for I/O but loses some typed-dataclass discipline; team less aligned.
 
-**Decision (revised 2026-05-22)**: **Go (≥ 1.25)**. Original decision was Python; revised at Bowen's direction.
+**Decision (revised 2026-05-22)**: **Go (≥ 1.25)**. Original decision was Python; revised at the maintainer's direction.
 
 **Rationale for the revision**:
 - Single-binary deploy fits the testbed's "deploy a small thing reliably for 6 months unattended" constraint better than a Python runtime + virtualenv.
@@ -981,7 +977,7 @@ The end-to-end flow for a single observation:
 - (B) Vehicle = Thing, GPS only via HistoricalLocations (no GPS Datastream); RFID event = Observation with FeatureOfInterest set to the picked-up container's location.
 - (C) Defer vehicles + RFID to a later milestone; ship containers + fill-level only as MVP.
 
-**Decision**: **DEFERRED to 2026-06-15**. MVP ships containers + fill-level only. Final modelling decision will be made by Bowen, Wybren, and Diego no later than 2026-06-15 and recorded here as an amendment to this ADR.
+**Decision**: **DEFERRED to 2026-06-15**. MVP ships containers + fill-level only. Final modelling decision will be made by the maintainer, the GIS specialist, and the solution architect no later than 2026-06-15 and recorded here as an amendment to this ADR.
 
 **Consequences**:
 - Code organisation must keep the OMS mapper free of vehicle-specific assumptions so option A or B can drop in without refactor.
@@ -1040,7 +1036,7 @@ The end-to-end flow for a single observation:
 
 **Context**: RFID transponder IDs may be PII under GDPR. Container locations might be sensitive in low-density residential placements.
 
-**Decision**: **RFID is out of MVP. Before any RFID data is published, a legal review (Diego + Clappform DPO + Vincent) confirms the lawful basis and selects the publication form (raw, salted hash, or aliased). Container locations are limited to public street furniture in v1.**
+**Decision**: **RFID is out of MVP. Before any RFID data is published, a legal review (the solution architect + Clappform DPO + the SULO domain contact) confirms the lawful basis and selects the publication form (raw, salted hash, or aliased). Container locations are limited to public street furniture in v1.**
 
 **Consequences**:
 - MVP scope is firmly fill-level only; no incidental publication of household-correlated data.
@@ -1090,9 +1086,25 @@ The end-to-end flow for a single observation:
 **Decision**: **Two-active-keys is the preferred procedure (R-RUN-1); single-key rotation (R-RUN-1b) is the documented fallback if SULO does not support two-active-keys.**
 
 **Consequences**:
-- Two-active-keys support is a Phase-1 capability question for Vincent (TBD-6).
+- Two-active-keys support is a Phase-1 capability question for the SULO domain contact (TBD-6).
 - The translation layer's config supports `SULO_API_KEY` + `SULO_API_KEY_PENDING` with documented precedence semantics.
 - If SULO cannot support two active keys, accept the 2-minute outage during scheduled rotation windows.
+
+> **SUPERSEDED 2026-07-30 — TBD-6 resolved by vendor documentation.** SULO's
+> sensor platform is the REEN CMS REST API v3 (<https://api.reen.com/guide/>),
+> which has **no API-key scheme at all**: `POST /session` exchanges the account's
+> username and password for a short-lived token sent as the `X-Token` header.
+> There is therefore no key to rotate and no two-active-keys question — the
+> premise of this ADR does not apply to the vendor as built.
+>
+> What replaces it: the credential is a password, rotated in REEN and then in the
+> `SULO_API_PASSWORD` secret (see the revised R-RUN-1). Zero-downtime rotation
+> comes for free from a different mechanism than this ADR anticipated — the
+> adapter re-authenticates on any `401`, so a token invalidated mid-cycle is
+> transparently replaced rather than causing an outage.
+>
+> `SULO_API_KEY` / `SULO_API_KEY_PENDING` and `Config.ActiveSULOKey()` were
+> removed when the adapter landed; they never had a consumer.
 
 ### ADR-011: Push ingestion as an additive, per-adapter source mode
 
@@ -1170,34 +1182,34 @@ docs/runbook.md                                    # operational runbook for the
 
 *Required procedures for the 6-month tail (2026-08-01 through 2027-01-31). Procedures published as `docs/runbook.md` in the public repo.*
 
-### R-RUN-1: SULO API key rotation (two-active-keys with overlap)
+### R-RUN-1: SULO credential rotation (REEN password)
+
+> Revised 2026-07-30. REEN issues session tokens from a username/password, not
+> API keys, so the previous two-active-keys (R-RUN-1) and single-key-outage
+> (R-RUN-1b) procedures no longer apply — see the note on ADR-010.
 
 **Trigger**: Quarterly schedule (set calendar reminder), or on any compromise notice from SULO.
 
-**Precondition**: SULO platform supports two simultaneously-valid API keys (confirm with Vincent during Phase 1; if not supported, fall back to the single-key procedure documented as R-RUN-1b).
+**Precondition**: none. No outage or deployment window is needed: the adapter
+holds a session token, not the credential, and re-authenticates automatically on
+the first `401`.
 
 **Procedure**:
-1. Request a new API key from Vincent. The old key remains valid.
-2. Add the new key to the `clappform-sulo-credentials` K8s Secret as `SULO_API_KEY_PENDING`.
-3. Update the translation-layer Deployment to read `SULO_API_KEY_PENDING` first, fall back to `SULO_API_KEY`. Roll deployment.
-4. Confirm a successful poll cycle has used the new key (log line `vendor=sulo auth_key_id=<new>`).
-5. Promote `SULO_API_KEY_PENDING` to `SULO_API_KEY` in the Secret; remove `SULO_API_KEY_PENDING`. Roll deployment.
-6. Notify Vincent to invalidate the old key on SULO's side.
+1. Rotate the password of the REEN API account (in REEN, or via the SULO domain contact).
+2. Update `SULO_API_PASSWORD` in the `translation-layer-secrets` K8s Secret.
+3. Roll the Deployment so the new value is picked up.
+4. Confirm a successful poll cycle: `sulo: session established` appears in the
+   logs and `vendor_permanent_errors_total{vendor="sulo"}` is not climbing.
 
 **Failure modes**:
-- If step 4 never reports the new key id: revert the env-var precedence and investigate. Old key still works.
-
-### R-RUN-1b: SULO API key rotation (single-key fallback)
-
-**When**: only if SULO does not support two-active-keys.
-
-**Procedure**:
-1. Schedule a deployment window per R-RUN-4.
-2. Scale `translation-layer` Deployment to 0 replicas.
-3. Update `SULO_API_KEY` in the K8s Secret.
-4. Ask Vincent to activate the new key on SULO's side.
-5. Scale back to 1 replica.
-6. Observations published by SULO during the ~2-minute window are re-fetched on resume (cursor unchanged).
+- **Wrong password in the Secret** → every cycle logs a permanent vendor error
+  (`session rejected (HTTP 401)`) and increments
+  `vendor_permanent_errors_total{vendor="sulo"}`. No observations are lost:
+  the poll cursor only advances on successfully ingested data, so the backlog is
+  collected once the credential is corrected. REEN retains fill-level history, so
+  recovery needs no manual backfill within the retention window.
+- **Password changed in REEN before the Secret is updated** → same signature as
+  above, self-healing once step 2 lands.
 
 ### R-RUN-2: State-store retention and rotation
 
@@ -1221,7 +1233,7 @@ docs/runbook.md                                    # operational runbook for the
 - Documented step-by-step in `docs/runbook.md#frost-restore`. Includes RTO ≤ 4 hours, RPO ≤ 24 hours.
 
 **Verification**:
-- Quarterly restore drill into a scratch namespace; confirms STA endpoint returns the expected entity counts. Documented as a calendar event for Bowen.
+- Quarterly restore drill into a scratch namespace; confirms STA endpoint returns the expected entity counts. Documented as a calendar event for the maintainer.
 
 ### R-RUN-4: Deployment window policy
 
@@ -1241,24 +1253,24 @@ To meet the 6-month operational commitment while running a single-replica deploy
 3. Triage classification:
    - Single vendor's Datastreams all stale → vendor adapter or vendor outage (e.g., `vendor=sulo` auth errors → run R-RUN-1 emergency path).
    - All Datastreams stale → translation layer itself, FROST writer, or network egress.
-   - Scattered subset → likely vendor-side per-device issues; coordinate with Vincent.
+   - Scattered subset → likely vendor-side per-device issues; coordinate with the SULO domain contact.
 4. Document the incident with timestamps in the operational log.
 
 ---
 
 ## Open Phase-1 TBDs
 
-The following decisions are explicit Phase 1 deliverables (owner: Tom Greiffioen, deadline: **2026-05-29**). Each becomes an ADR amendment when resolved.
+The following decisions are explicit Phase 1 deliverables (owner: project manager, deadline: **2026-05-29**). Each becomes an ADR amendment when resolved.
 
 | ID | Item | Owner | Deadline | Default if unresolved |
 |----|------|-------|----------|-----------------------|
-| TBD-1 | Cluster operational ownership Aug 2026 – Jan 2027 | Tom | 2026-05-29 | Clappform platform-ops team that runs the Afvalstoffendienst production deployment |
-| TBD-2 | RFID privacy review date and outcome | Diego + Clappform DPO + Vincent | 2026-06-08 (before ADR-003 deadline) | Block RFID publication until completed |
-| TBD-3 | M5 reproducibility validator at July demo | Tom | 2026-06-30 | External municipal engineer recruited by Tom; not previously involved in this project |
-| TBD-4 | Reproducibility-guide path in Geonovum public repo | Tom | 2026-05-29 | Placeholder path; updated in a follow-on commit |
-| TBD-5 | Alert webhook destination (SMTP / chat URL) | Bowen + Tom | 2026-05-29 | SMTP-to-email to [redacted] + [redacted] |
-| TBD-6 | SmartSULO API contract details (auth scheme, pagination, timestamp format, rate limits, two-active-keys support) | Vincent | 2026-05-29 | SULO adapter stubbed against assumed REST shape; integration test deferred |
-| TBD-7 | Topic #1 contractor contact + OMS pre-alignment | Tom (via Geonovum) | 2026-05-29 | Design proceeds in isolation; F6 dual-write supports later cutover |
+| TBD-1 | Cluster operational ownership Aug 2026 – Jan 2027 | Project manager | 2026-05-29 | Clappform platform-ops team |
+| TBD-2 | RFID privacy review date and outcome | Solution architect + Clappform DPO + SULO domain contact | 2026-06-08 (before ADR-003 deadline) | Block RFID publication until completed |
+| TBD-3 | M5 reproducibility validator at July demo | Project manager | 2026-06-30 | External municipal engineer recruited via Geonovum; not previously involved in this project |
+| TBD-4 | Reproducibility-guide path in Geonovum public repo | Project manager | 2026-05-29 | Placeholder path; updated in a follow-on commit |
+| TBD-5 | Alert webhook destination (SMTP / chat URL) | Maintainer + project manager | 2026-05-29 | SMTP-to-email to the maintainer and project manager |
+| TBD-6 | SmartSULO API contract details (auth scheme, pagination, timestamp format, rate limits, two-active-keys support) | SULO domain contact | 2026-05-29 | SULO adapter stubbed against assumed REST shape; integration test deferred |
+| TBD-7 | Topic #1 contractor contact + OMS pre-alignment | Project manager (via Geonovum) | 2026-05-29 | Design proceeds in isolation; F6 dual-write supports later cutover |
 
 ---
 
@@ -1268,10 +1280,9 @@ The following decisions are explicit Phase 1 deliverables (owner: Tom Greiffioen
 
 | # | Severity | Challenge | Disposition |
 |---|----------|-----------|-------------|
-| C1 | Critical | Phase 1 timeline: 7 days, parallel commitments, no slack | **Accepted as Known Risk** (R8 in risk table). Tom commits to weekly Phase 1 status check-ins. If Phase 1 slips, MVP slips into mid-June with proactive Geonovum notification. |
 | C2 | Critical | STA `$filter=name eq` apostrophe escaping | **Resolved**: filter algorithm now specifies OData v4 string-literal escaping (single-quote doubling) + name length cap of 255. |
 | C3 | Critical | 6h freshness threshold assumes 1/h cadence | **Resolved**: per-Datastream threshold = `max(3 × expected_cadence_seconds, 1h)`. Count-based alert trigger. |
-| C4 | Critical | SULO key rotation procedure undefined | **Resolved**: R-RUN-1 (two-active-keys) and R-RUN-1b (single-key fallback) documented in Operational Runbook. Two-active-keys support is a Phase 1 question for Vincent (TBD-6). |
+| C4 | Critical | SULO key rotation procedure undefined | **Resolved**: R-RUN-1 (two-active-keys) and R-RUN-1b (single-key fallback) documented in Operational Runbook. Two-active-keys support is a Phase 1 question for the SULO domain contact (TBD-6). |
 | C5 | Critical | State-store disk growth + rotation undefined | **Resolved**: R-RUN-2 documents weekly 90-day-retention purge as an in-layer cron + manual escalation path. |
 | C6 | Critical | FROST Postgres backup strategy undefined | **Resolved**: R-RUN-3 documents daily `pg_dump`, weekly off-cluster, RTO 4h / RPO 24h, quarterly restore drill. |
 | S1 | Significant | SULO coordinate order ambiguity (lon,lat vs lat,lon) | **Resolved**: adapter coordinate-order rule + first-sample NL-bbox sanity check documented in Location notes. |
@@ -1338,7 +1349,7 @@ The following decisions are explicit Phase 1 deliverables (owner: Tom Greiffioen
 ### Access control confirmed
 - **FROST read**: anonymous (no auth on GET).
 - **FROST write**: bearer token, held only by translation layer.
-- **SULO read**: API key in `clappform-sulo-credentials` Secret; rotated quarterly by Vincent.
+- **SULO read**: API key in `clappform-sulo-credentials` Secret; rotated quarterly by the SULO domain contact.
 - **Translation-layer admin endpoints** (`/healthz*`, `/metrics`): cluster-internal only, enforced by `Service.type: ClusterIP` with no Ingress rule.
 
 ### UI behaviors confirmed
@@ -1351,8 +1362,12 @@ The following decisions are explicit Phase 1 deliverables (owner: Tom Greiffioen
 ### Config and environment confirmed
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `SULO_API_BASE_URL` | SmartSULO REST root | `https://api.sulo.example.com/v1` |
-| `SULO_API_KEY` | SmartSULO auth header value | (secret) |
+| `SULO_API_BASE_URL` | REEN CMS REST API root (`/api/3` appended if absent) | `https://api.reen.com/api/3` |
+| `SULO_API_USERNAME` | REEN account username for `POST /session` | `<reen-account>@example.org` |
+| `SULO_API_PASSWORD` | REEN account password for `POST /session` | (secret) |
+| `SULO_CUSTOMER_ID` | `X-Customer` scope; only when the account spans several REEN customers | `12345` |
+| `SULO_MIN_CONFIDENCE` | REEN analytics confidence floor; default 1 drops only readings REEN flagged erroneous | `1` |
+| `SULO_EXPECTED_CADENCE_SECONDS` | Per-Datastream freshness expectation (ADR-008); unset falls back to `FRESHNESS_THRESHOLD_HOURS` | `14400` |
 | `FROST_TARGETS` | Comma-separated list of FROST base URLs to dual-write to | `https://frost.testbed.clappform.com/v1.1` (later: `,https://frost.geonovum.example/v1.1`) |
 | `FROST_WRITE_TOKEN` | Bearer token for FROST auth; used when no Basic user is set; one value applied to all targets in v1; per-target creds deferred | (secret) |
 | `FROST_BASIC_AUTH_USER` | HTTP Basic username for FROST auth; when set, Basic is used instead of Bearer | `write` |

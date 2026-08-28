@@ -10,7 +10,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/canonical"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/canonical"
 )
 
 // Reason is a stable, machine-readable rejection code. New codes are
@@ -87,15 +87,19 @@ func Filter(
 var ErrAdapter = errors.New("validator: adapter contract violation")
 
 func validate(o canonical.Observation, cursor, now time.Time, skew time.Duration) (Reason, bool) {
-	// Missing or NaN result.
-	if math.IsNaN(o.Result) {
-		return ReasonMissingResult, false
-	}
+	// Passthrough observations carry a verbatim (possibly non-numeric)
+	// result; numeric missing/range checks don't apply to them.
+	if o.ResultRaw == nil {
+		// Missing or NaN result.
+		if math.IsNaN(o.Result) {
+			return ReasonMissingResult, false
+		}
 
-	// Range check (fill-level only in v1).
-	if o.ObservedProperty == canonical.FillLevel {
-		if o.Result < 0 || o.Result > 100 {
-			return ReasonOutOfRange, false
+		// Range check (fill-level only in v1).
+		if o.ObservedProperty == canonical.FillLevel {
+			if o.Result < 0 || o.Result > 100 {
+				return ReasonOutOfRange, false
+			}
 		}
 	}
 

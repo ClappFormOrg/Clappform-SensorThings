@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/canonical"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/canonical"
 )
 
 func fixedClock(t time.Time) func() time.Time { return func() time.Time { return t } }

@@ -1,0 +1,57 @@
+# SULO (REEN) poll run — opt in explicitly, this file is NOT auto-loaded:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.sulo.yml up --build postgres translation-layer
+#
+# (Naming -f files suppresses docker-compose.override.yml, which is the
+# Collaborall/WBD replication path and would otherwise be merged in.)
+#
+#   SULO REEN API ──poll──▶ translation-layer ──▶ FROST_TARGETS (WBD testbed)
+#
+# Secrets come from the repo-root .env via the base file's env_file, so no
+# credential is committed here. Set FROST_PASSWORD in your shell first:
+#   PowerShell:  $env:FROST_PASSWORD='the-wbd-password'
+#   bash:        export FROST_PASSWORD='the-wbd-password'
+services:
+  translation-layer:
+    # The local frost-server/frost-postgres are not needed — we write to WBD
+    # and the state store is the only dependency.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # --- Destination FROST -------------------------------------------------
+      FROST_TARGETS: https://sta.wbd-rd.nl/FROST-Server/v1.1
+      FROST_BASIC_AUTH_USER: write
+      FROST_BASIC_AUTH_PASSWORD: ${FROST_PASSWORD:?set FROST_PASSWORD in your shell first}
+      FROST_WRITE_TOKEN: ""
+      # WBD's TLS cert doesn't match its hostname, so verification must be off.
+      FROST_TLS_INSECURE_SKIP_VERIFY: "true"
+      FROST_HTTP_TIMEOUT_SECONDS: "30"
+
+      # --- MQTT publish path (reuses the FROST Basic cred) -------------------
+      MQTT_ENABLED: "true"
+      MQTT_BROKER_URL: wss://sta.wbd-rd.nl/mqtt
+      MQTT_TOPIC_PREFIX: "v1.1"
+      MQTT_QOS: "1"
+
+      # Prefix on every created FROST entity name — separates our data and
+      # avoids name-based upsert collisions with other parties in the shared
+      # FROST-Server. Same prefix as the Collaborall run.
+      ENTITY_NAME_PREFIX: "CF_"
+
+      # Real data — no synthetic containers.
+      DUMMY_ADAPTER_ENABLED: "false"
+
+      # REEN publishes hourly fill-level estimates (measured via
+      # cmd/sulo-probe), so a 15-minute poll re-checks each stream ~4x per new
+      # reading; the ingest core's idempotency probe drops the repeats.
+      POLL_INTERVAL_SECONDS: "900"
+      # Freshness expectation, not the cadence. Publication lag reaches ~5h on
+      # the slowest containers, and the watchdog alarms at 3x this value, so 4h
+      # gives a 12h threshold. Setting this to the 1h cadence flagged 13 of 51
+      # healthy streams as stale.
+      SULO_EXPECTED_CADENCE_SECONDS: "14400"
+      # First cycle only: how far back to seed each new stream's cursor.
+      # 3600 = roughly one reading per slot. Raise for a backfill.
+      CURSOR_INIT_LOOKBACK_SECONDS: "3600"
+      LOG_LEVEL: DEBUG

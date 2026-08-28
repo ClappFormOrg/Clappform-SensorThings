@@ -18,8 +18,8 @@ import (
 	"hash/fnv"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/adapters"
-	"github.com/clappformorg/geonovum-sta-translation/internal/canonical"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/adapters"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/canonical"
 )
 
 // VendorID is the stable identifier this adapter registers under.

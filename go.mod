@@ -1,4 +1,4 @@
-module github.com/clappformorg/geonovum-sta-translation
+module github.com/ClappFormOrg/Clappform-SensorThings
 
 go 1.25
 
@@ -6,6 +6,7 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/prometheus/client_golang v1.20.5
+	golang.org/x/sync v0.17.0
 )
 
 require (
@@ -22,7 +23,6 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	golang.org/x/crypto v0.42.0 // indirect
 	golang.org/x/net v0.44.0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect

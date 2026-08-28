@@ -17,12 +17,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/adapters"
-	"github.com/clappformorg/geonovum-sta-translation/internal/canonical"
-	"github.com/clappformorg/geonovum-sta-translation/internal/ingest"
-	"github.com/clappformorg/geonovum-sta-translation/internal/metrics"
-	"github.com/clappformorg/geonovum-sta-translation/internal/oms"
-	"github.com/clappformorg/geonovum-sta-translation/internal/state"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/adapters"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/canonical"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/ingest"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/metrics"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/oms"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/state"
 )
 
 // Scheduler orchestrates poll cycles across registered poll adapters.
@@ -141,10 +141,10 @@ func (s *Scheduler) runAdapterCycle(ctx context.Context, a adapters.PollAdapter)
 // runDatastreamCycle is the per-Datastream poll → ingest → advance path.
 // It is the only place the cursor advances.
 //
-//	1. seed cursor if absent (now - lookback)
-//	2. fetch observations
-//	3. hand to the ingest core (validate → upsert chain → write → record)
-//	4. advance cursor to the max covered phenomenonTime (F1 step 7)
+//  1. seed cursor if absent (now - lookback)
+//  2. fetch observations
+//  3. hand to the ingest core (validate → upsert chain → write → record)
+//  4. advance cursor to the max covered phenomenonTime (F1 step 7)
 func (s *Scheduler) runDatastreamCycle(
 	ctx context.Context,
 	a adapters.PollAdapter,

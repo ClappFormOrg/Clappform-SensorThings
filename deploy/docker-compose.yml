@@ -61,6 +61,13 @@ services:
         condition: service_healthy
       frost-server:
         condition: service_started
+    # Vendor credentials (SULO_API_*, COLLABORALL_*) come from the repo-root
+    # .env so no secret is committed here. The explicit `environment:` block
+    # below overrides env_file, so the local-stack settings (local FROST, MQTT
+    # off, local Postgres) always win over whatever .env holds for a real run.
+    env_file:
+      - path: ../.env
+        required: false
     environment:
       STATE_STORE_DSN: postgres://translation:translation@postgres:5432/translation_state?sslmode=disable
       FROST_TARGETS: http://frost-server:8080/FROST-Server/v1.1
@@ -75,13 +82,18 @@ services:
       POLL_INTERVAL_SECONDS: "60"
       LOG_LEVEL: DEBUG
       HTTP_ADDR: ":8080"
-      # Synthetic data for end-to-end validation before SULO is connected.
-      # Flip to "false" (or remove) once a real adapter is registered.
-      DUMMY_ADAPTER_ENABLED: "true"
+      # Synthetic data for exercising the pipeline with no vendor attached.
+      # Now that the SULO adapter is registered this defaults off, so a local
+      # run shows real SULO data instead of fake containers mixed in with it.
+      # Flip to "true" to smoke-test the write path with no credentials.
+      DUMMY_ADAPTER_ENABLED: "false"
       DUMMY_THINGS_COUNT: "5"
       DUMMY_CADENCE_SECONDS: "300"
-      # SULO_API_BASE_URL: (set when SULO adapter lands)
-      # SULO_API_KEY: (set when SULO adapter lands)
+      # SULO adapter (REEN CMS REST API v3). Set all three to enable it, and
+      # turn DUMMY_ADAPTER_ENABLED off once real data flows.
+      # SULO_API_BASE_URL: "https://api.reen.com/api/3"
+      # SULO_API_USERNAME: ""
+      # SULO_API_PASSWORD: ""
     ports:
       - "8080:8080"
 

@@ -17,9 +17,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/metrics"
-	"github.com/clappformorg/geonovum-sta-translation/internal/state"
-	"github.com/clappformorg/geonovum-sta-translation/internal/watchdog"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/metrics"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/state"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/watchdog"
 )
 
 // Server is the admin HTTP server.

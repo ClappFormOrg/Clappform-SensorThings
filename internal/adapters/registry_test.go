@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/canonical"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/canonical"
 )
 
 // stubPoll / stubPush are minimal adapters for registry tests.
 type stubPoll struct{ id string }
 
-func (s stubPoll) VendorID() string                                { return s.id }
+func (s stubPoll) VendorID() string                                      { return s.id }
 func (s stubPoll) ListThings(context.Context) ([]canonical.Thing, error) { return nil, nil }
 func (s stubPoll) ListDatastreamsForThing(context.Context, string) ([]canonical.Datastream, error) {
 	return nil, nil
@@ -23,8 +23,8 @@ func (s stubPoll) FetchObservations(context.Context, string, canonical.ObservedP
 
 type stubPush struct{ id string }
 
-func (s stubPush) VendorID() string                          { return s.id }
-func (s stubPush) Authenticate(*http.Request, []byte) error  { return nil }
+func (s stubPush) VendorID() string                         { return s.id }
+func (s stubPush) Authenticate(*http.Request, []byte) error { return nil }
 func (s stubPush) DecodePush(context.Context, []byte) (DecodedBatch, error) {
 	return DecodedBatch{}, nil
 }

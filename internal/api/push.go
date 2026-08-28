@@ -13,11 +13,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/adapters"
-	"github.com/clappformorg/geonovum-sta-translation/internal/canonical"
-	"github.com/clappformorg/geonovum-sta-translation/internal/ingest"
-	"github.com/clappformorg/geonovum-sta-translation/internal/oms"
-	"github.com/clappformorg/geonovum-sta-translation/internal/state"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/adapters"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/canonical"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/ingest"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/oms"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/state"
 )
 
 // MaxPushBytes bounds an inbound push body (413 above it).
@@ -140,9 +140,10 @@ func (s *PushServer) ingestBatch(ctx context.Context, log *slog.Logger, vendorID
 			return resp, http.StatusServiceUnavailable
 		}
 		for _, d := range dt.Datastreams {
-			if d.ObservedProperty != canonical.FillLevel {
-				continue
-			}
+			// Push mode registers every declared Datastream (ADR-011);
+			// passthrough vendors (Collaborall) carry arbitrary phenomena,
+			// not just fill level. The observed-property string is the
+			// per-Thing stream key.
 			dsID, err := s.Store.UpsertDatastream(ctx, thingID, string(d.ObservedProperty), d.ExpectedCadenceSeconds)
 			if err != nil {
 				log.Error("push upsert datastream", slog.Any("err", err))

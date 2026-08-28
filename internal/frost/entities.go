@@ -59,14 +59,14 @@ type ObservedProperty struct {
 // Datastream payload. Cross-entity refs are written via the
 // nested-link form: {"@iot.id": <n>}.
 type Datastream struct {
-	Name              string              `json:"name"`
-	Description       string              `json:"description"`
-	UnitOfMeasurement UnitOfMeasurement   `json:"unitOfMeasurement"`
-	ObservationType   string              `json:"observationType"`
-	Thing             EntityRef           `json:"Thing"`
-	Sensor            EntityRef           `json:"Sensor"`
-	ObservedProperty  EntityRef           `json:"ObservedProperty"`
-	Properties        map[string]any      `json:"properties,omitempty"`
+	Name              string            `json:"name"`
+	Description       string            `json:"description"`
+	UnitOfMeasurement UnitOfMeasurement `json:"unitOfMeasurement"`
+	ObservationType   string            `json:"observationType"`
+	Thing             EntityRef         `json:"Thing"`
+	Sensor            EntityRef         `json:"Sensor"`
+	ObservedProperty  EntityRef         `json:"ObservedProperty"`
+	Properties        map[string]any    `json:"properties,omitempty"`
 }
 
 // FeatureOfInterest payload.
@@ -78,11 +78,15 @@ type FeatureOfInterest struct {
 }
 
 // Observation payload. PhenomenonTime and ResultTime are RFC3339
-// strings; the OMS mapper sets them. Result is the raw measurement.
+// strings; the OMS mapper sets them. Result is the measurement value —
+// any JSON scalar STA permits (number for OM_Measurement, boolean for
+// OM_TruthObservation, integer for OM_CountObservation, string, …). The
+// mapper passes a float64 for numeric vendors or a json.RawMessage for
+// verbatim passthrough.
 type Observation struct {
 	PhenomenonTime    string         `json:"phenomenonTime"`
 	ResultTime        string         `json:"resultTime"`
-	Result            float64        `json:"result"`
+	Result            any            `json:"result"`
 	FeatureOfInterest *EntityRef     `json:"FeatureOfInterest,omitempty"`
 	Parameters        map[string]any `json:"parameters,omitempty"`
 	ResultQuality     map[string]any `json:"resultQuality,omitempty"`
@@ -98,9 +102,9 @@ type EntityRef struct {
 // via env vars per S7 in the adversarial review (config-driven mapping
 // for Topic #1 alignment).
 const (
-	EncodingGeoJSON              = "application/geo+json"
-	EncodingJSON                 = "application/json"
-	ObservationTypeMeasurement   = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement"
-	UCUMPercentDefinition        = "http://www.opengis.net/def/uom/UCUM/0/%"
-	QUDTDimensionlessRatio       = "http://qudt.org/vocab/quantitykind/DimensionlessRatio"
+	EncodingGeoJSON            = "application/geo+json"
+	EncodingJSON               = "application/json"
+	ObservationTypeMeasurement = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement"
+	UCUMPercentDefinition      = "http://www.opengis.net/def/uom/UCUM/0/%"
+	QUDTDimensionlessRatio     = "http://qudt.org/vocab/quantitykind/DimensionlessRatio"
 )

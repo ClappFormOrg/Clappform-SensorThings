@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/canonical"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/canonical"
 )
 
 // PollAdapter is the contract a poll-mode vendor implementation must

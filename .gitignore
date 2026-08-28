@@ -16,6 +16,15 @@ coverage.*
 .env.local
 *.secret.yaml
 deploy/k8s/secret.yaml
+# Any extra Compose override a developer drops in stays local. The one
+# committed override (deploy/docker-compose.override.yml) predates this rule
+# and is tracked deliberately: it holds no literal secrets, only ${VAR:?}
+# substitutions resolved from the shell.
+*.override.yml
+# Scripts that embed a credential go here; the committed deploy/*.ps1 tooling
+# reads secrets from the environment instead. A blanket *.ps1 rule used to
+# exclude that tooling from the repo by accident.
+*.local.ps1
 
 # Editor / OS
 .vscode/
@@ -23,6 +32,7 @@ deploy/k8s/secret.yaml
 *.swp
 .DS_Store
 Thumbs.db
+.claude
 
 # Build cache
 /tmp/

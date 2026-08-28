@@ -23,12 +23,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/clappformorg/geonovum-sta-translation/internal/canonical"
-	"github.com/clappformorg/geonovum-sta-translation/internal/frost"
-	"github.com/clappformorg/geonovum-sta-translation/internal/metrics"
-	"github.com/clappformorg/geonovum-sta-translation/internal/oms"
-	"github.com/clappformorg/geonovum-sta-translation/internal/state"
-	"github.com/clappformorg/geonovum-sta-translation/internal/validator"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/canonical"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/frost"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/metrics"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/oms"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/state"
+	"github.com/ClappFormOrg/Clappform-SensorThings/internal/validator"
 )
 
 // Result summarises one ProcessStream call. Counts are across the whole
@@ -117,6 +117,9 @@ func (p *Processor) ProcessStream(
 	if err != nil {
 		return res, err
 	}
+	if len(targets) > 0 {
+		p.recordSTAIDs(ctx, thingID, dsID, targets[0])
+	}
 
 	var maxResultTime time.Time
 	for _, o := range kept {
@@ -155,9 +158,10 @@ func (p *Processor) ProcessStream(
 
 // resolvedTarget binds a Writer to the STA ids it needs for observation writes.
 type resolvedTarget struct {
-	writer *frost.Writer
-	dsID   int64 // STA Datastream @iot.id
-	foiID  int64 // STA FeatureOfInterest @iot.id (0 → omit, FROST uses default)
+	writer  *frost.Writer
+	thingID int64 // STA Thing @iot.id
+	dsID    int64 // STA Datastream @iot.id
+	foiID   int64 // STA FeatureOfInterest @iot.id (0 → omit, FROST uses default)
 }
 
 // resolveTargets runs the Thing→Location→Sensor→ObservedProperty→Datastream
@@ -179,7 +183,7 @@ func (p *Processor) resolveTargets(ctx context.Context, vendor string, t canonic
 func (p *Processor) resolveChain(ctx context.Context, w *frost.Writer, t canonical.Thing, d canonical.Datastream) (resolvedTarget, error) {
 	when := p.now().UTC()
 
-	thingName := oms.ThingName(t.VendorID, t.VendorNativeID)
+	thingName := p.Mapper.ThingEntityName(t)
 	staThingID, err := w.GetOrCreate(ctx, frost.EntityThings, thingName, "/Things",
 		func() any { return p.Mapper.ThingPayload(t) })
 	if err != nil {
@@ -188,7 +192,7 @@ func (p *Processor) resolveChain(ctx context.Context, w *frost.Writer, t canonic
 
 	// Location is created under the Thing; its dated name keeps it
 	// idempotent on "same day, same coords".
-	locName := oms.LocationName(t.VendorID, t.VendorNativeID, when)
+	locName := p.Mapper.LocationEntityName(t, when)
 	if _, err := w.GetOrCreate(ctx, frost.EntityLocations, locName,
 		fmt.Sprintf("/Things(%d)/Locations", staThingID),
 		func() any { return p.Mapper.LocationPayload(t, when) }); err != nil {
@@ -202,28 +206,54 @@ func (p *Processor) resolveChain(ctx context.Context, w *frost.Writer, t canonic
 		return resolvedTarget{}, err
 	}
 
-	opPayload := p.Mapper.ObservedPropertyPayload(d.ObservedProperty)
+	opPayload := p.Mapper.ObservedPropertyPayload(d)
 	staOPID, err := w.GetOrCreate(ctx, frost.EntityObservedProperties, opPayload.Name, "/ObservedProperties",
 		func() any { return opPayload })
 	if err != nil {
 		return resolvedTarget{}, err
 	}
 
-	dsName := oms.DatastreamName(t.VendorID, t.VendorNativeID, d.ObservedProperty)
+	dsName := p.Mapper.DatastreamEntityName(t, d)
 	staDSID, err := w.GetOrCreate(ctx, frost.EntityDatastreams, dsName, "/Datastreams",
 		func() any { return p.Mapper.DatastreamPayload(t, d, staThingID, staSensorID, staOPID) })
 	if err != nil {
 		return resolvedTarget{}, err
 	}
 
-	foiName := oms.FoIName(t.VendorID, t.VendorNativeID)
+	foiName := p.Mapper.FoIEntityName(t)
 	staFoIID, err := w.GetOrCreate(ctx, frost.EntityFeaturesOfInterest, foiName, "/FeaturesOfInterest",
 		func() any { return p.Mapper.FoIPayload(t) })
 	if err != nil {
 		return resolvedTarget{}, err
 	}
 
-	return resolvedTarget{writer: w, dsID: staDSID, foiID: staFoIID}, nil
+	return resolvedTarget{writer: w, thingID: staThingID, dsID: staDSID, foiID: staFoIID}, nil
+}
+
+// recordSTAIDs stores the server-assigned Thing and Datastream @iot.ids
+// against our own rows, so the state store can be joined to FROST without
+// re-resolving entities by name.
+//
+// With several targets the first one wins and a single id is kept, which is
+// the same convention writeObservation already uses for sta_observation_id
+// (ADR-004 defers per-target bookkeeping until a second target is live).
+//
+// This is bookkeeping, not part of the write path: a failure here is logged
+// and swallowed, because losing the cross-reference must never abort an
+// ingest that is otherwise succeeding.
+func (p *Processor) recordSTAIDs(ctx context.Context, thingID, dsID int64, rt resolvedTarget) {
+	if rt.thingID != 0 {
+		if err := p.Store.SetSTAThingID(ctx, thingID, rt.thingID); err != nil {
+			p.Logger.Warn("record sta thing id", slog.Any("err", err),
+				slog.Int64("thing_id", thingID), slog.Int64("sta_thing_id", rt.thingID))
+		}
+	}
+	if rt.dsID != 0 {
+		if err := p.Store.SetSTADatastreamID(ctx, dsID, rt.dsID); err != nil {
+			p.Logger.Warn("record sta datastream id", slog.Any("err", err),
+				slog.Int64("datastream_id", dsID), slog.Int64("sta_datastream_id", rt.dsID))
+		}
+	}
 }
 
 // writeObservation writes one observation to every target and records the
