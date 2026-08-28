@@ -43,10 +43,11 @@ route: connect devices directly, or put an intermediary in between.
 
 ### What we built and validated
 
-We built an intermediary translation layer instead of connecting devices directly. Our sensors are
-not reachable as devices, because the waste-container fleet reports into a vendor platform and what
-we get is a vendor API. The layer takes any source, maps it to the STA entity model, and writes it to
-one or more STA servers. The reliability machinery sits in the middle.
+We built an intermediary translation layer instead of connecting devices directly, because our
+sensors are not reachable as devices: the waste-container fleet reports into a vendor platform, and
+what we get is a vendor API. The layer takes any source, maps it to the STA entity model, and writes
+it to one or more STA servers, and the parts that make those writes reliable sit between the two
+ends, meaning the stored cursor, the deduplication and the write-log.
 
 We validated the layer against the live Brabantse Delta FROST-Server, not a local mock: five
 containers with their fill-level datastreams and more than 1,400 observations, written and read back
@@ -112,11 +113,11 @@ bugs into their own client.
 ### Why we recommend the standard
 
 The strongest argument for STA came out of the second integration. We pointed our reader at an
-unfamiliar organisation's server: 46 observed properties, 460 datastreams, and a domain of
-pump telemetry, seismics and air quality with no overlap at all with our own waste containers. It
-took days. No bilateral agreement, no vendor SDK, no schema exchange, and no conversation with the
-other party's engineers. Every vendor API integration we have done cost more than that. Section 7
-makes that case in full, together with the honest caveats.
+unfamiliar organisation's server: 46 observed properties, 460 datastreams, and a domain of pump
+telemetry, seismics and air quality with no overlap at all with our own waste containers. Working
+replication took days, with no bilateral agreement, no vendor SDK, no schema exchange, and no
+conversation with the other party's engineers. Every vendor API integration we have done cost more
+than that. Section 7 makes that case in full, together with the honest caveats.
 
 ## 1. What we built
 
@@ -179,7 +180,7 @@ flowchart LR
 *Figure 1. The translation layer, its sources and its targets. The Collaborall server appears twice,
 because we read from it and also write back into it.*
 
-The system has three seams.
+The system has three seams: the adapter contract, the ingest core and the FROST writer.
 
 **The adapter contract.** Every source produces the same canonical `Thing`, `Datastream` and
 `Observation` types, whether that source is a polled vendor API, a pushed webhook or another STA
@@ -195,15 +196,15 @@ cursor forward. The cursor is a stored marker of the last reading we delivered s
 and write-log together are what make the pipeline safe to restart and able to fill gaps.
 
 **The FROST writer.** It upserts entities by name, meaning it looks each entity up by name and
-creates it only when it is absent. It checks for an existing observation before writing a
-new one, and it supports two transports for creating observations: HTTP `POST`, or MQTT publish over
-WebSockets. Entity upserts go over HTTP. We can write several targets in parallel, which is
-what we call dual-write.
+creates it only when it is absent. It checks for an existing observation before writing a new one,
+and it supports two transports for creating observations: HTTP `POST`, or MQTT publish over
+WebSockets, while entity upserts always go over HTTP. We can write several targets in parallel,
+which is what we call dual-write.
 
 ### 1.2 How a waste container becomes STA entities
 
-Table 3 is the whole mapping. One container arrives from the vendor API as an id, a
-position and a fill percentage, and becomes six entities plus a reading.
+Table 3 is the whole mapping: one container arrives from the vendor API as an id, a position and a
+fill percentage, and becomes six entities plus a reading.
 
 | Domain concept         | STA entity                  | Name we generate                                  | Notes                                                                                                                        |
 | ---------------------- | --------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -239,8 +240,9 @@ that makes re-polling safe.
 
 ### 1.3 Worked examples: what arrives, and what we send
 
-Table 3 is the destination. We transform our two kinds of source differently. A vendor REST API has a model with nothing to do with
-STA. Another STA server already has the right model, and the job there is faithful copying.
+Table 3 is the destination, and we reach it differently from each of our two kinds of source. A
+vendor REST API has a model with nothing to do with STA, while another STA server already has the
+right model, so the job there is faithful copying.
 
 The shapes below follow the source schemas and our mapping code. The values illustrate rather
 than reproduce captured traffic.
@@ -486,8 +488,8 @@ own naming instead of substituting our own.
 
 ### 1.4 What one cycle does
 
-The mapping above is static. This is what happens on every poll, and it is where the reliability in
-section 2 comes from.
+The mapping above is static, whereas the sequence below runs on every poll, and it is where the
+reliability in section 2 comes from.
 
 1. **Poll from a stored cursor.** The adapter asks the vendor for everything newer than the last
    observation we wrote successfully for each stream. The cursor lives in Postgres, so a restart
@@ -528,14 +530,14 @@ removing them.
 
 *Table 4. The three integrations side by side.*
 
-The server row is the most important one in that table, and we had it wrong at first. We assumed both
-targets were FROST-Server builds. They are not. The Collaborall server is a separate, independently
-written STA implementation. Its maintainer confirmed this in the testbed discussions as the first
-non-FROST implementation in the programme, and the PHP/Laravel stack traces other participants
-received from it point the same way. Once we knew that, the work became an interoperability test rather
-than a single-server exercise. Every difference between the two targets in section 4 is a
-difference between two independent readings of one specification, not two configurations of one
-codebase. It is also the reason section 4.10 exists.
+The server row is the most important one in that table, and we had it wrong at first. We assumed
+both targets were FROST-Server builds, and only one of them is: the Collaborall server is a
+separate, independently written STA implementation. Its maintainer confirmed this in the testbed
+discussions as the first non-FROST implementation in the programme, and the PHP/Laravel stack traces
+other participants received from it point the same way. Once we knew that, the work became an
+interoperability test rather than a single-server exercise. Every difference between the two targets
+in section 4 is a difference between two independent readings of one specification, not two
+configurations of one codebase. It is also the reason section 4.10 exists.
 
 The third integration answers a different question from the first two. WBD and Collaborall are both STA
 servers, so both tested the standard against itself. SULO's platform is not an STA server and never
@@ -625,10 +627,10 @@ effort of exposing sensor data through a common standard.
 
 *Table 5. Relative implementation effort by area.*
 
-Conforming to the standard was cheap, and production robustness
-against a real network, a real authentication scheme and a real non-standard server is where the
-engineering lived. That second cost exists whether or not you use a standard, which is why adopting one is close to
-free. Section 7.3 expands on this.
+Conforming to the standard was cheap, and production robustness against a real network, a real
+authentication scheme and a real non-standard server is where the engineering lived. That second
+cost exists whether or not you use a standard, which is why adopting one is close to free, and
+section 7.3 works that argument through.
 
 ### 3.1 The third adapter, as a measured data point
 
@@ -698,13 +700,13 @@ automatically on any `401`, a password can be rotated with no coordination at al
 vendor, update the secret, and in-flight polling recovers by itself. The capability we had written a
 runbook for fell out of ordinary session handling.
 
-Two lessons. **Do not specify a credential lifecycle before you have the vendor's authentication
-documentation.** We wrote a procedure, a config surface and an operational runbook for a scheme that
-never existed, and unwound all three. And **treat "session token, refreshed on 401" as the
-default assumption for a vendor REST API**, because it is both more common than a static key and
-easier to operate. The one design consequence worth carrying: a token refresh must be single-flight.
-Datastreams are polled concurrently, so an expired token is discovered by many goroutines at the same
-instant, and without that guard every one of them opens its own session.
+The first lesson: **do not specify a credential lifecycle before you have the vendor's
+authentication documentation.** We wrote a procedure, a config surface and an operational runbook
+for a scheme that never existed, and unwound all three. The second: **treat "session token,
+refreshed on 401" as the default assumption for a vendor REST API**, because it is both more common
+than a static key and easier to operate. The one design consequence worth carrying: a token refresh
+must be single-flight. Datastreams are polled concurrently, so an expired token is discovered by
+many goroutines at the same instant, and without that guard every one of them opens its own session.
 
 ### 4.2 "FROST-Server" is not one thing.
 
@@ -713,8 +715,8 @@ The WBD deployment is not a standard build. Things expose non-standard navigatio
 each entity. Together these form a project-scoped authorisation and device-management extension.
 
 Our live concern was whether new entities would need an explicit Project association, or would be
-blocked by the `restricted` model. Neither happened. A standard STA `POST` of a new Thing was accepted
-and created with `restricted: false`, and no Project association was required.
+blocked by the `restricted` model, and neither turned out to apply: a standard STA `POST` of a new
+Thing was accepted and created with `restricted: false`, with no Project association required.
 
 We only established that by probing: create a Thing, read it back, see what the server added. The
 extension is not announced anywhere a client can find it, which is the same gap section 6.3 asks to
@@ -762,16 +764,18 @@ namespacing belongs in a profile rather than in each participant's config file.
 
 **Why.** The scheduler resolves Datastreams concurrently, one goroutine each, sharing one `Writer`.
 Entity upsert is check-then-act, meaning it looks first and creates second, with a gap in between
-where another request can slip through: cache miss, then `FindByName`, then POST when absent. Entities
-with per-container unique names, Thing, Location, Datastream and FeatureOfInterest, never collide. But
-Sensor and ObservedProperty are shared across all five datastreams, so five goroutines each saw the
-entity as absent and each posted a copy. Two defects sat underneath. The in-memory entity cache was an
-unsynchronised map, which is a genuine data race, and check-create was not atomic per key.
+where another request can slip through: cache miss, then `FindByName`, then POST when absent.
+Entities with per-container unique names, Thing, Location, Datastream and FeatureOfInterest, never
+collide. But Sensor and ObservedProperty are shared across all five datastreams, so five goroutines
+each saw the entity as absent and each posted a copy. Two defects sat underneath that: the in-memory
+entity cache was an unsynchronised map, which is a genuine data race, and check-create was not
+atomic per key.
 
 **Why the standard is implicated.** FROST does not reject duplicate names, and it is right not to,
 because STA does not require entity names to be unique. So there is no 409, no error and no signal.
-The race writes wrong data, and our conflict-refetch branch never fired. This is
-the clearest example we found of a gap in the standard causing an implementation bug. See section 6.2.
+The race writes wrong data, and our conflict-refetch branch never fired. This is the clearest
+example we found of a gap in the standard causing an implementation bug, and section 6.2 sets out
+what we would change.
 
 **Resolution.** A mutex-guarded cache plus a single-flight group keyed on entity and name, so
 concurrent first-sight creates collapse into one `FindByName` and one POST. Single-flight means one
@@ -779,11 +783,12 @@ shared lookup that every waiting caller reuses. This sits in the writer layer, i
 scheduler concurrency, and a race-detector regression test backs it. **Status: closed.** Cleaning up
 the redundant entities already created on WBD is still outstanding.
 
-**How we found it.** No error appeared. A routine log line reported `sta duplicate entity ... count=5` when a later run's name lookup returned
-five hits where it expected one. The duplicates had been created cleanly and accepted cleanly, and
-they would have stayed invisible indefinitely if the lookup had not been written to notice
-multiplicity. Had we written `FindByName` to take the first result, which is the obvious
-implementation, this defect would still be in production and we would not know.
+**How we found it.** No error appeared; what surfaced it was a routine log line reporting
+`sta duplicate entity ... count=5` when a later run's name lookup returned five hits where it
+expected one. The duplicates had been created cleanly and accepted cleanly, and they would have stayed
+invisible indefinitely if the lookup had not been written to notice multiplicity. Had we written
+`FindByName` to take the first result, which is the obvious implementation, this defect would still
+be in production and we would not know.
 
 **We caught a silent data-integrity bug only because of a defensive check we had written for
 unrelated reasons.** Any pipeline doing name-keyed upserts against
@@ -823,13 +828,14 @@ replaces one probe per observation with one probe per datastream per run.
 
 It also explains something we had recorded as unexplained. Inserting an observation takes a lock on
 its datastream, so running several threads at one datastream buys nothing, which is why adding
-concurrency did not move our throughput. Single-threading per datastream costs us nothing and removes
-the contention. We are adopting the pattern.
+concurrency did not move our throughput. Single-threading per datastream costs us nothing and
+removes the contention, so we are adopting the pattern.
 
-One case still needs our own bookkeeping. That invariant holds for a source that only moves forward in
-time. Ours does not, because the vendor API mixes settled estimates with forecasts and can
-re-issue a corrected value for a timestamp we have already passed. For a back-dated correction, the newest
-stored reading tells us nothing, so the write-log stays. See section 6.2.
+One case still needs our own bookkeeping. That invariant holds for a source that only moves forward
+in time. Ours does not, because the vendor API mixes settled estimates with forecasts and can
+re-issue a corrected value for a timestamp we have already passed. For a back-dated correction, the
+newest stored reading tells us nothing, so the write-log stays, which is part of what section 6.2
+asks the standard to remove.
 
 **A second implementer measured the same cost.** After we posted this finding, the team
 running the TGV/BDJ connector reported their own numbers from three weeks of continuous operation
@@ -843,10 +849,10 @@ replay path it still dominates. Their working arrangement is three-layered rathe
 seed the cursor from the server's latest observation at startup, write optimistically and treat a
 `409` as "already delivered", and fall back to the probe only when replaying a previously failed write.
 
-The third layer carries the wider lesson. Optimistic `409` is the cheapest correct approach, and
-it only works if the server enforces uniqueness and says so with that status. Nothing in
-the specification requires either, and no server documents which it does, so a client cannot adopt the
-cheap path without testing each target by hand. The probe is one cost. The other is that the
+The third layer carries the wider lesson. Optimistic `409` is the cheapest correct approach, and it
+only works if the server enforces uniqueness and says so with that status. Nothing in the
+specification requires either, and no server documents which it does, so a client cannot adopt the
+cheap path without testing each target by hand. The probe is one cost, and the other is that the
 efficient alternative is undiscoverable.
 
 This one belongs to nobody's implementation. The probe exists because STA defines no idempotent write,
@@ -856,12 +862,12 @@ observation, paid by each producer separately.
 
 ### 4.6 The second source broke our canonical model.
 
-**What happened.** We scoped the Collaborall integration expecting fill-level data. There was none. We
-found 460 datastreams of pump pressure and flow, indoor and outdoor air quality, CO₂, particulates,
-motion, noise, light, ground acceleration on three axes, and a full weather station. Our
-fill-level-only filter would have mapped zero of them.
+**What happened.** We scoped the Collaborall integration expecting fill-level data and found none of
+it. What the server held instead was 460 datastreams of pump pressure and flow, indoor and outdoor
+air quality, CO₂, particulates, motion, noise, light, ground acceleration on three axes, and a full
+weather station. Our fill-level-only filter would have mapped zero of them.
 
-The shapes did not fit either.
+The shapes did not fit our model either, in three ways.
 
 - **Non-numeric results.** `OM_TruthObservation` results are booleans, such as `motion`, and
   `OM_CountObservation` results are integers, such as `light_level`. Our canonical
@@ -919,10 +925,10 @@ encodingType)", mandatory. Table 15 lists three encodingTypes, `application/pdf`
 the metadata property may contain either a URL to metadata content, or the metadata content itself, in
 the case of `text/plain` or other encodingTypes that can be represented as valid JSON.
 
-An inline JSON object under `encodingType: application/json` therefore sits inside the specification,
-and **nothing in the standard requires `metadata` to be a string.** A server that rejects a JSON
-object with "The metadata field must be a string" enforces a constraint the specification does not
-state. That is a server-side defect.
+An inline JSON object under `encodingType: application/json` therefore sits inside the
+specification, and **nothing in the standard requires `metadata` to be a string.** A server that
+rejects a JSON object with "The metadata field must be a string" enforces a constraint the
+specification does not state, which makes the rejection a server-side defect.
 
 **Where the constraint comes from.** The rejecting server is not a FROST build at all, but an
 independent PHP/Laravel implementation (see section 1.5), and the message gives it away. "The metadata
@@ -963,8 +969,8 @@ The Collaborall server is a well-formed STA server carrying data that is hard to
 - **One node maps to many datastreams, one ObservedProperty maps to many sensors**, with no consistent
   naming convention across them.
 
-None of this breaks STA. All of it means a consumer cannot answer "give me all CO₂ readings in this
-area" without a human-curated mapping. We achieved interoperability of form. We did not achieve
+None of this breaks STA, and all of it means a consumer cannot answer "give me all CO₂ readings in
+this area" without a human-curated mapping. We achieved interoperability of form. We did not achieve
 interoperability of meaning. This is the gap a national profile is best placed to close (see section
 6.1), and in our view it is the highest-value thing Geonovum could add on top of the standard.
 
@@ -1008,11 +1014,11 @@ interoperability of meaning. This is the gap a national profile is best placed t
 
 ### 4.10 Whose problem is it: the implementation, the deployment, or the standard?
 
-Almost every problem above arrived looking like "the standard is unclear" or "their server is broken",
-and those two diagnoses lead to different actions on different timescales. One
-team can fix a server bug in a week. A specification change takes years and needs a working group. A
-client workaround takes an afternoon and makes the problem permanent. Choosing wrongly is
-expensive. The `Sensor.metadata` rejection in section 4.7 serves as the worked example.
+Almost every problem above arrived looking like "the standard is unclear" or "their server is
+broken", and those two diagnoses lead to different actions on different timescales. One team can fix
+a server bug in a week. A specification change takes years and needs a working group. A client
+workaround takes an afternoon and makes the problem permanent, so choosing wrongly is expensive. The
+`Sensor.metadata` rejection in section 4.7 serves as the worked example.
 
 #### 4.10.1 Why this was answerable at all
 
@@ -1040,8 +1046,8 @@ The test does not turn on which server is more popular, or which one you develop
 
 #### 4.10.3 Applying it to the testbed's evidence
 
-Three cases came up in this testbed, and other participants found two of them and reported them on the
-programme's discussion board. They land in three different rows.
+Three cases came up in this testbed, and other participants found two of them and reported them on
+the programme's discussion board. They land in three different rows of that table, one each.
 
 **`Datastream.observationType`: verdict A, the lax implementation is wrong.** Another participant had
 been creating Datastreams with `observationType: "instant"`, which FROST accepted for months.
@@ -1051,12 +1057,12 @@ FROST was lax, the client had built on that laxity without knowing, and the stri
 The specification needs no change. The permissive server needs to stop being permissive, and each
 client that developed against it has invalid data to correct.
 
-**`Sensor.metadata` as a JSON object: verdict B, the strict implementation is wrong.** Our case. The
-specification types `metadata` as `Any`, permits encodingTypes beyond the three it enumerates, and
-explicitly contemplates the metadata content sitting inline for encodingTypes that can be represented
-as valid JSON. Our payload is legal. The rejection comes from a Laravel `string` validation rule
-rather than a reading of the standard (see section 4.7). The strict server is wrong here, which
-mirrors the previous case on the same server.
+**`Sensor.metadata` as a JSON object: verdict B, the strict implementation is wrong.** This one is
+ours. The specification types `metadata` as `Any`, permits encodingTypes beyond the three it
+enumerates, and explicitly contemplates the metadata content sitting inline for encodingTypes that
+can be represented as valid JSON, so our payload is legal. The rejection comes from a Laravel
+`string` validation rule rather than a reading of the standard (see section 4.7). The strict server
+is wrong here, which mirrors the previous case on the same server.
 
 **`unitOfMeasurement` with a null symbol: verdict C, then B.** A third case, also from another
 participant. A boolean-valued stream with `symbol: null` was rejected as "the unit of
@@ -1085,14 +1091,15 @@ a client with a delivery date can rely on, because we still need to write today,
 rejects us today.
 
 **Treating it as a specification problem.** In favour: fixing the text fixes each implementation at
-once and for good, and it makes the requirement testable, which turns interoperable in principle into
-interoperable in practice. The ambiguity is real and demonstrable: `Any` as the declared
-type, three enumerated encodingTypes that are all string-shaped, and a sentence telling clients to do
-string parsing. That is mixed signalling. Against: timescales run to years, so it helps
-nobody this quarter. Narrowing `Any` risks removing flexibility that existing deployments legitimately
-rely on. Mandate "string" and you break servers storing objects. Mandate "object" and you break the
-PDF-URL case the specification explicitly describes. Worst of all, "the standard should be clearer" is
-an easy place to park a problem so that nobody owns it, which looks like progress and delivers none.
+once and for good, and it makes the requirement testable, which turns interoperable in principle
+into interoperable in practice. The ambiguity is real and demonstrable, and it amounts to mixed
+signalling: `Any` as the declared type, three enumerated encodingTypes that are all string-shaped,
+and a sentence telling clients to do string parsing. Against: timescales run to years, so it helps
+nobody this quarter. Narrowing `Any` risks removing flexibility that existing deployments
+legitimately rely on. Mandate "string" and you break servers storing objects. Mandate "object" and
+you break the PDF-URL case the specification explicitly describes. Worst of all, "the standard
+should be clearer" is an easy place to park a problem so that nobody owns it, which looks like
+progress and delivers none.
 
 **The third option, which teams take without arguing for it: treat it as your own problem.**
 Serialise the object to a string and move on. In favour: it works this afternoon, against any
@@ -1147,10 +1154,10 @@ the only thing separating them is that the forecasts are dated ahead of now.
 
 **Why that is dangerous rather than merely untidy.** Our write path already rejects a future-dated
 observation: the validator flags it `in_future` against a clock-skew tolerance, and it never reaches
-the server. That part was fine. The damage came from a second rule interacting with the first. Our
-poll cursor advances to the newest observation the cycle *covered*, and "covered" includes, by design,
-observations that were **definitively rejected**. A permanently invalid reading must not be re-fetched
-forever, so the cursor moves past it. `in_future` was classified as definitive.
+the server, so that part was fine. The damage came from a second rule interacting with the first.
+Our poll cursor advances to the newest observation the cycle *covered*, and "covered" includes, by
+design, observations that were **definitively rejected**. A permanently invalid reading must not be
+re-fetched forever, so the cursor moves past it. `in_future` was classified as definitive.
 
 Compose the two and the failure is silent and total:
 
@@ -1162,8 +1169,8 @@ Compose the two and the failure is silent and total:
 5. Three days of real data for that container are gone, no error is logged, and the stream looks
    healthy because the cursor is moving.
 
-Each rule is defensible alone. Together they convert a vendor's forecast horizon into a data-loss
-window, and the freshness watchdog does not catch it because the datastream is being polled
+Each rule is defensible alone, and together they convert a vendor's forecast horizon into a
+data-loss window that the freshness watchdog does not catch, because the datastream is being polled
 successfully the whole time.
 
 **The fix, and where it belongs.** The adapter discards any row newer than the current time before
@@ -1242,10 +1249,10 @@ cadence we had measured: REEN publishes an estimate for each container every hou
 into the configuration. Our watchdog turns that into an alarm threshold of three times the cadence,
 giving three hours. Within a day it was reporting thirteen of fifty-one streams as stale.
 
-None of them were. Checking each against the vendor API showed we held every reading the source
-exposed; the flagged containers had not had a new estimate published yet. The lag between the
-hour a reading describes and the moment it becomes readable varies per container, and we measured it
-spread across the fleet like this:
+None of the thirteen were stale. Checking each against the vendor API showed we held every reading
+the source exposed, and the flagged containers had not yet had a new estimate published. The lag
+between the hour a reading describes and the moment it becomes readable varies per container, and we
+measured it spread across the fleet like this:
 
 | Publication lag | Slots |
 | --------------- | ----- |
@@ -1334,8 +1341,9 @@ SDK, and no way to express "count the things whose name starts with X".
 
 ### 5.4 Navigation-scoped creation
 
-`POST /Things(96)/Locations` creates the Location and the association in one request. No separate link
-call, and no risk of an orphaned entity between two writes. A small feature, and a simpler write path.
+`POST /Things(96)/Locations` creates the Location and the association in one request, so there is no
+separate link call and no risk of an orphaned entity between two writes. It is a small feature that
+makes the write path simpler.
 
 ### 5.5 Two transports, one entity model
 
@@ -1352,8 +1360,8 @@ client can walk a server it has never seen, with no prior knowledge of its conte
 inlined, reads Observations per stream, and rebuilds the entity graph. It did that against a server
 whose domain we did not know, whose operators we never spoke to, and for which no documentation exists.
 
-This is what turns STA from a data format into an integration strategy. Section 7 works through the
-consequences.
+This is what turns STA from a data format into an integration strategy, and section 7 works through
+the consequences.
 
 ### 5.7 A server can be both a source and a sink.
 
@@ -1454,15 +1462,15 @@ reading first, and a way to find out what a given server does enforce.
 
 **Why it matters.** Two reasons, and the second is the serious one.
 
-First, cost. This is the largest piece of infrastructure the standard pushes onto its clients. A
-write-log, a stored cursor and a check before every write is not a small amount of code, and every
-reliable STA producer has to build it.
+The first reason is cost, and it is the largest piece of infrastructure the standard pushes onto its
+clients. A write-log, a stored cursor and a check before every write is not a small amount of code,
+and every reliable STA producer has to build it.
 
-Second, and worse: **the entity-level failure is silent.** FROST does not reject duplicate names, and
-it is right not to, because STA does not require them to be unique. So there is no 409, no error and no signal,
-only duplicated data. The standard makes the naive implementation the incorrect one
-and gives the implementer no feedback that they got it wrong. Anyone writing to STA concurrently either
-has this bug, or has found and solved it themselves.
+The second is worse: **the entity-level failure is silent.** FROST does not reject duplicate names,
+and it is right not to, because STA does not require them to be unique. So there is no 409, no error
+and no signal, only duplicated data. The standard makes the naive implementation the incorrect one
+and gives the implementer no feedback that they got it wrong. Anyone writing to STA concurrently
+either has this bug, or has found and solved it themselves.
 
 **What the standard is already doing about it.** STA v2 addresses the entity half directly. As Hylke
 van der Schaaf quotes in [discussion #22](https://github.com/Geonovum/testbed-sensordata-2026/discussions/22),
@@ -1496,11 +1504,11 @@ project could have done so. That is the fastest remedy available to us. On the s
 a unique constraint on `Sensor.name` and `ObservedProperty.name` would have turned our silent
 duplication into a 409 on the first run.
 
-That reframes the finding. On a server several parties write into, the constraints are a deployment
+That reframes the finding: on a server several parties write into, the constraints are a deployment
 decision that every writer depends on and none of them can see. A national profile is where that
-belongs, alongside the vocabulary work in section 6.1, and it
-is a second argument for the capabilities document in section 6.3, because an administrator's added
-constraints are the kind of local truth a client cannot guess.
+belongs, alongside the vocabulary work in section 6.1, and it is a second argument for the
+capabilities document in section 6.3, because an administrator's added constraints are the kind of
+local truth a client cannot guess.
 
 ### 6.3 Require a machine-readable capabilities document.
 
@@ -1537,9 +1545,9 @@ clients to perform string parsing. As section 4.7 records, one server took that 
 string and rejected a payload the specification allows. **The server carried the defect, and the
 standard carried the ambiguity behind it,** and this item asks only for the second half.
 
-The rejection then compounds it. `STA-422` is a FROST-specific code, and nothing in the standard tells
-a client whether a rejection is permanent or temporary. Ours classified the 422 as temporary and
-retried, indefinitely, a payload that server was never going to accept.
+The rejection then compounds the ambiguity, because `STA-422` is a FROST-specific code and nothing
+in the standard tells a client whether a rejection is permanent or temporary. Ours classified the
+422 as temporary and retried, indefinitely, a payload that server was never going to accept.
 
 **Why it matters.** Implementers read a field declared `Any` alongside prose that assumes a string,
 and they diverge. Divergence in the core entity set breaks the assumption most adopters start with,
@@ -1591,9 +1599,9 @@ That gap, days against weeks, is the argument, and you can measure it.
 ### 7.2 Integrate once, be consumable by everyone.
 
 A bespoke API means N consumers times M producers, so N times M integrations, each needing its own
-bilateral agreement. STA collapses that. Publish once, and every existing STA client can consume you
-with no work on your side and no negotiation. The marginal cost of your second data consumer is close
-to zero, and you never have to know who they are.
+bilateral agreement, and STA collapses that to one. Publish once, and every existing STA client can
+consume you with no work on your side and no negotiation. The marginal cost of your second data
+consumer is close to zero, and you never have to know who they are.
 
 For a gemeente, waterschap or provincie this is the decisive argument. You cannot list your future data
 consumers, so you cannot negotiate with them in advance, and a standard lets you serve the ones you
@@ -1639,8 +1647,8 @@ undetected had we tested against one only. Note also that the payload was one th
 so the server, and not our client, was at fault. Expect to build idempotency yourself as well (see
 section 6.2).
 
-Neither changes the conclusion. Both change your project plan, and day one is the cheapest time to
-learn them.
+Neither of those changes the conclusion, though both change your project plan, and day one is the
+cheapest time to learn them.
 
 ## 8. Recommendations
 
